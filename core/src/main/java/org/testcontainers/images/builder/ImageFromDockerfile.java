@@ -1,9 +1,5 @@
 package org.testcontainers.images.builder;
 
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.command.BuildImageCmd;
-import com.github.dockerjava.api.command.BuildImageResultCallback;
-import com.github.dockerjava.api.model.BuildResponseItem;
 import lombok.Cleanup;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -11,17 +7,20 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.ContainerControllerFactory;
+import org.testcontainers.controller.ContainerController;
+import org.testcontainers.controller.callbacks.BuildImageResultCallback;
+import org.testcontainers.controller.intents.BuildImageIntent;
+import org.testcontainers.controller.intents.BuildResultItem;
+import org.testcontainers.docker.DockerClientFactory;
 import org.testcontainers.images.ParsedDockerfile;
 import org.testcontainers.images.builder.traits.BuildContextBuilderTrait;
 import org.testcontainers.images.builder.traits.ClasspathTrait;
 import org.testcontainers.images.builder.traits.DockerfileTrait;
 import org.testcontainers.images.builder.traits.FilesTrait;
 import org.testcontainers.images.builder.traits.StringsTrait;
-import org.testcontainers.utility.Base58;
 import org.testcontainers.utility.DockerLoggerFactory;
 import org.testcontainers.utility.LazyFuture;
-import org.testcontainers.utility.ResourceReaper;
 
 import java.io.IOException;
 import java.io.PipedInputStream;
@@ -51,10 +50,11 @@ public class ImageFromDockerfile extends LazyFuture<String> implements
     private final Map<String, String> buildArgs = new HashMap<>();
     private Optional<String> dockerFilePath = Optional.empty();
     private Optional<Path> dockerfile = Optional.empty();
+    private Optional<Boolean> disabledPush = Optional.empty();
     private Set<String> dependencyImageNames = Collections.emptySet();
 
     public ImageFromDockerfile() {
-        this("localhost/testcontainers/" + Base58.randomString(16).toLowerCase());
+        this(ContainerControllerFactory.instance().controller().getRandomImageName());
     }
 
     public ImageFromDockerfile(String dockerImageName) {
@@ -81,18 +81,17 @@ public class ImageFromDockerfile extends LazyFuture<String> implements
     protected final String resolve() {
         Logger logger = DockerLoggerFactory.getLogger(dockerImageName);
 
-        DockerClient dockerClient = DockerClientFactory.instance().client();
+        ContainerController containerController = ContainerControllerFactory.instance().controller();
 
         try {
             if (deleteOnExit) {
-                ResourceReaper.instance().registerImageForCleanup(dockerImageName);
+                containerController.getResourceReaper().registerImageForCleanup(dockerImageName);
             }
 
             BuildImageResultCallback resultCallback = new BuildImageResultCallback() {
                 @Override
-                public void onNext(BuildResponseItem item) {
+                public void onNext(BuildResultItem item) {
                     super.onNext(item);
-
                     if (item.isErrorIndicated()) {
                         logger.error(item.getErrorDetail().getMessage());
                     } else {
@@ -105,7 +104,7 @@ public class ImageFromDockerfile extends LazyFuture<String> implements
             @Cleanup PipedInputStream in = new PipedInputStream();
             @Cleanup PipedOutputStream out = new PipedOutputStream(in);
 
-            BuildImageCmd buildImageCmd = dockerClient.buildImageCmd(in);
+            BuildImageIntent buildImageCmd = containerController.buildImageIntent(in);
             configure(buildImageCmd);
             Map<String, String> labels = new HashMap<>();
             if (buildImageCmd.getLabels() != null) {
@@ -116,7 +115,7 @@ public class ImageFromDockerfile extends LazyFuture<String> implements
 
             prePullDependencyImages(dependencyImageNames);
 
-            BuildImageResultCallback exec = buildImageCmd.exec(resultCallback);
+            BuildImageResultCallback exec = buildImageCmd.perform(resultCallback);
 
             long bytesToDockerDaemon = 0;
 
@@ -146,9 +145,10 @@ public class ImageFromDockerfile extends LazyFuture<String> implements
         }
     }
 
-    protected void configure(BuildImageCmd buildImageCmd) {
+    protected void configure(BuildImageIntent buildImageCmd) {
         buildImageCmd.withTag(this.getDockerImageName());
         this.dockerFilePath.ifPresent(buildImageCmd::withDockerfilePath);
+        this.disabledPush.ifPresent(buildImageCmd::withDisabledPush);
         this.dockerfile.ifPresent(p -> {
             buildImageCmd.withDockerfile(p.toFile());
             dependencyImageNames = new ParsedDockerfile(p).getDependencyImageNames();
@@ -159,17 +159,16 @@ public class ImageFromDockerfile extends LazyFuture<String> implements
                 buildImageCmd.withPull(false);
             }
         });
-
         this.buildArgs.forEach(buildImageCmd::withBuildArg);
     }
 
     private void prePullDependencyImages(Set<String> imagesToPull) {
-        final DockerClient dockerClient = DockerClientFactory.instance().client();
+        final ContainerController containerController = ContainerControllerFactory.instance().controller();
 
         imagesToPull.forEach(imageName -> {
             try {
                 log.info("Pre-emptively checking local images for '{}', referenced via a Dockerfile. If not available, it will be pulled.", imageName);
-                DockerClientFactory.instance().checkAndPullImage(dockerClient, imageName);
+                containerController.checkAndPullImage(imageName);
             } catch (Exception e) {
                 log.warn("Unable to pre-fetch an image ({}) depended upon by Dockerfile - image build will continue but may fail. Exception message was: {}", imageName, e.getMessage());
             }
@@ -183,6 +182,11 @@ public class ImageFromDockerfile extends LazyFuture<String> implements
 
     public ImageFromDockerfile withBuildArgs(final Map<String, String> args) {
         this.buildArgs.putAll(args);
+        return this;
+    }
+
+    public ImageFromDockerfile withDisabledPush(Boolean disabledPush) {
+        this.disabledPush = Optional.ofNullable(disabledPush);
         return this;
     }
 

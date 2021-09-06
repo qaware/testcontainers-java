@@ -3,18 +3,13 @@ package org.testcontainers.containers;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
-import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.exception.NotFoundException;
-import com.github.dockerjava.api.model.Bind;
-import com.github.dockerjava.api.model.ContainerNetwork;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Link;
 import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
-import com.github.dockerjava.api.model.Volume;
 import com.github.dockerjava.api.model.VolumesFrom;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.google.common.annotations.VisibleForTesting;
@@ -37,7 +32,16 @@ import org.rnorth.ducttape.ratelimits.RateLimiter;
 import org.rnorth.ducttape.ratelimits.RateLimiterBuilder;
 import org.rnorth.ducttape.unreliables.Unreliables;
 import org.slf4j.Logger;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.ContainerControllerFactory;
+import org.testcontainers.controller.intents.CreateContainerIntent;
+import org.testcontainers.controller.intents.InspectContainerResult;
+import org.testcontainers.controller.model.BindMode;
+import org.testcontainers.controller.model.ContainerNetwork;
+import org.testcontainers.controller.model.ContainerState;
+import org.testcontainers.controller.model.EnvironmentVariable;
+import org.testcontainers.controller.model.HostMount;
+import org.testcontainers.controller.model.MountPoint;
+import org.testcontainers.docker.DockerClientFactory;
 import org.testcontainers.UnstableAPI;
 import org.testcontainers.containers.output.OutputFrame;
 import org.testcontainers.containers.startupcheck.IsRunningStartupCheckStrategy;
@@ -47,6 +51,7 @@ import org.testcontainers.containers.traits.LinkableContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.containers.wait.strategy.WaitStrategy;
 import org.testcontainers.containers.wait.strategy.WaitStrategyTarget;
+import org.testcontainers.controller.ContainerController;
 import org.testcontainers.images.ImagePullPolicy;
 import org.testcontainers.images.RemoteDockerImage;
 import org.testcontainers.lifecycle.Startable;
@@ -60,7 +65,6 @@ import org.testcontainers.utility.DockerMachineClient;
 import org.testcontainers.utility.DynamicPollInterval;
 import org.testcontainers.utility.MountableFile;
 import org.testcontainers.utility.PathUtils;
-import org.testcontainers.utility.ResourceReaper;
 import org.testcontainers.utility.TestcontainersConfiguration;
 
 import java.io.File;
@@ -107,8 +111,8 @@ import static org.testcontainers.utility.CommandLine.runShellCommand;
  */
 @Data
 public class GenericContainer<SELF extends GenericContainer<SELF>>
-        extends FailureDetectingExternalResource
-        implements Container<SELF>, AutoCloseable, WaitStrategyTarget, Startable {
+    extends FailureDetectingExternalResource
+    implements Container<SELF>, AutoCloseable, WaitStrategyTarget, Startable {
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
@@ -140,7 +144,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
 
     @NonNull
     private List<String> networkAliases = new ArrayList<>(Arrays.asList(
-            "tc-" + Base58.randomString(8)
+        "tc-" + Base58.randomString(8)
     ));
 
     @NonNull
@@ -156,7 +160,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
     private String[] commandParts = new String[0];
 
     @NonNull
-    private List<Bind> binds = new ArrayList<>();
+    private List<HostMount> hostMounts = new ArrayList<>(); // TODO: Rename
 
     private boolean privilegedMode;
 
@@ -194,28 +198,27 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
      * We use {@link DockerClientFactory#lazyClient()} here to avoid eager client creation
      */
     @Setter(AccessLevel.NONE)
-    protected DockerClient dockerClient = DockerClientFactory.lazyClient();
+    protected ContainerController containerController = ContainerControllerFactory.lazyController();
 
     /**
      * Set during container startup
-     *
      */
     @Setter(AccessLevel.NONE)
     @VisibleForTesting
     String containerId;
 
     @Setter(AccessLevel.NONE)
-    private InspectContainerResponse containerInfo;
+    private InspectContainerResult containerInfo;
 
     /**
      * The approach to determine if the container is ready.
      */
     @NonNull
-    protected org.testcontainers.containers.wait.strategy.WaitStrategy waitStrategy = Wait.defaultWaitStrategy();
+    protected WaitStrategy waitStrategy = Wait.defaultWaitStrategy();
 
     private List<Consumer<OutputFrame>> logConsumers = new ArrayList<>();
 
-    private final Set<Consumer<CreateContainerCmd>> createContainerCmdModifiers = new LinkedHashSet<>();
+    private final Set<Consumer<CreateContainerIntent>> createContainerCmdModifiers = new LinkedHashSet<>();
 
     private static final Set<String> AVAILABLE_IMAGE_NAME_CACHE = new HashSet<>();
     private static final RateLimiter DOCKER_CLIENT_RATE_LIMITER = RateLimiterBuilder
@@ -240,7 +243,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
     }
 
     /**
-     * @deprecated use {@link GenericContainer(DockerImageName)} instead
+     * @deprecated use {@link GenericContainer (DockerImageName)} instead
      */
     @Deprecated
     public GenericContainer() {
@@ -310,8 +313,8 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
             return;
         }
         Startables.deepStart(dependencies).get();
-        // trigger LazyDockerClient's resolve so that we fail fast here and not in getDockerImageName()
-        dockerClient.authConfig();
+        // warmup the container controller so that we fail fast here
+        containerController.warmup();
         doStart();
     }
 
@@ -359,7 +362,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
             logger().debug("Starting container: {}", dockerImageName);
 
             logger().info("Creating container for image: {}", dockerImageName);
-            CreateContainerCmd createCommand = dockerClient.createContainerCmd(dockerImageName);
+            CreateContainerIntent createCommand = containerController.createContainerIntent(dockerImageName);
             applyConfiguration(createCommand);
 
             createCommand.getLabels().put(DockerClientFactory.TESTCONTAINERS_LABEL, "true");
@@ -408,8 +411,8 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
             }
 
             if (!reused) {
-                containerId = createCommand.exec().getId();
-
+                containerId = createCommand.perform().getId();
+                containerController.getResourceReaper().registerContainerForCleanup(containerId);
                 // TODO use single "copy" invocation (and calculate an hash of the resulting tar archive)
                 copyToFileContainerPathMap.forEach(this::copyFileToContainer);
             }
@@ -420,7 +423,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
                 containerIsCreated(containerId);
 
                 logger().info("Starting container with ID: {}", containerId);
-                dockerClient.startContainerCmd(containerId).exec();
+                containerController.startContainerIntent(containerId).perform();
             }
 
             logger().info("Container {} is starting: {}", dockerImageName, containerId);
@@ -434,7 +437,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
                 .pollInterval(DynamicPollInterval.ofMillis(50))
                 .pollInSameThread()
                 .until(
-                    () -> dockerClient.inspectContainerCmd(containerId).exec(),
+                    () -> containerController.inspectContainerIntent(containerId).perform(),
                     inspectContainerResponse -> {
                         Set<Integer> exposedAndMappedPorts = inspectContainerResponse
                             .getNetworkSettings()
@@ -444,10 +447,10 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
                             .stream()
                             .filter(it -> Objects.nonNull(it.getValue())) // filter out exposed but not yet mapped
                             .map(Entry::getKey)
-                            .map(ExposedPort::getPort)
+                            .map(org.testcontainers.controller.model.ExposedPort::getPort)
                             .collect(Collectors.toSet());
 
-                         return exposedAndMappedPorts.containsAll(exposedPorts);
+                        return exposedAndMappedPorts.containsAll(exposedPorts);
                     }
                 );
 
@@ -455,7 +458,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
             containerIsStarting(containerInfo, reused);
 
             // Wait until the container has reached the desired running state
-            if (!this.startupCheckStrategy.waitUntilStartupSuccessful(dockerClient, containerId)) {
+            if (!this.startupCheckStrategy.waitUntilStartupSuccessful(containerController, containerId)) {
                 // Bail out, don't wait for the port to start listening.
                 // (Exception thrown here will be caught below and wrapped)
                 throw new IllegalStateException("Container did not start correctly.");
@@ -466,9 +469,9 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
                 waitUntilContainerStarted();
             } catch (Exception e) {
                 logger().debug("Wait strategy threw an exception", e);
-                InspectContainerResponse inspectContainerResponse = null;
+                InspectContainerResult inspectContainerResponse = null;
                 try {
-                    inspectContainerResponse = dockerClient.inspectContainerCmd(containerId).exec();
+                    inspectContainerResponse = containerController.inspectContainerIntent(containerId).perform();
                 } catch (NotFoundException notFoundException) {
                     logger().debug("Container {} not found", containerId, notFoundException);
                 }
@@ -477,7 +480,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
                     throw new IllegalStateException("Container is removed");
                 }
 
-                InspectContainerResponse.ContainerState state = inspectContainerResponse.getState();
+                ContainerState state = inspectContainerResponse.getState();
                 if (Boolean.TRUE.equals(state.getDead())) {
                     throw new IllegalStateException("Container is dead");
                 }
@@ -556,14 +559,14 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
 
     @UnstableAPI
     @SneakyThrows(JsonProcessingException.class)
-    final String hash(CreateContainerCmd createCommand) {
+    final String hash(CreateContainerIntent createIntent) { // TODO: Hash of interface?
         DefaultDockerClientConfig dockerClientConfig = DefaultDockerClientConfig.createDefaultConfigBuilder().build();
 
         byte[] commandJson = dockerClientConfig.getObjectMapper()
             .copy()
             .enable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
             .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
-            .writeValueAsBytes(createCommand);
+            .writeValueAsBytes(createIntent);
 
         // TODO add Testcontainers' version to the hash
         return Hashing.sha1().hashBytes(commandJson).toString();
@@ -572,11 +575,11 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
     @VisibleForTesting
     Optional<String> findContainerForReuse(String hash) {
         // TODO locking
-        return dockerClient.listContainersCmd()
+        return containerController.listContainersIntent()
             .withLabelFilter(ImmutableMap.of(HASH_LABEL, hash))
             .withLimit(1)
             .withStatusFilter(Arrays.asList("running"))
-            .exec()
+            .perform()
             .stream()
             .findAny()
             .map(it -> it.getId());
@@ -599,7 +602,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
     private void connectToPortForwardingNetwork(String networkMode) {
         PortForwardingContainer.INSTANCE.getNetwork().map(ContainerNetwork::getNetworkID).ifPresent(networkId -> {
             if (!Arrays.asList(networkId, "none", "host").contains(networkMode)) {
-                dockerClient.connectToNetworkCmd().withContainerId(containerId).withNetworkId(networkId).exec();
+                containerController.connectToNetworkIntent().withContainerId(containerId).withNetworkId(networkId).perform();
             }
         });
     }
@@ -624,7 +627,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
             }
 
             containerIsStopping(containerInfo);
-            ResourceReaper.instance().stopAndRemoveContainer(containerId, imageName);
+            containerController.getResourceReaper().stopAndRemoveContainer(containerId, imageName);
             containerIsStopped(containerInfo);
         } finally {
             containerId = null;
@@ -651,9 +654,10 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
         Path directory = new File(".tmp-volume-" + System.currentTimeMillis()).toPath();
         PathUtils.mkdirp(directory);
 
-        if (temporary) Runtime.getRuntime().addShutdownHook(new Thread(DockerClientFactory.TESTCONTAINERS_THREAD_GROUP, () -> {
-            PathUtils.recursiveDeleteDir(directory);
-        }));
+        if (temporary)
+            Runtime.getRuntime().addShutdownHook(new Thread(DockerClientFactory.TESTCONTAINERS_THREAD_GROUP, () -> {
+                PathUtils.recursiveDeleteDir(directory);
+            }));
 
         return directory;
     }
@@ -666,22 +670,22 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
     }
 
     @SuppressWarnings({"EmptyMethod", "UnusedParameters"})
-    protected void containerIsStarting(InspectContainerResponse containerInfo) {
+    protected void containerIsStarting(InspectContainerResult containerInfo) {
     }
 
     @SuppressWarnings({"EmptyMethod", "UnusedParameters"})
     @UnstableAPI
-    protected void containerIsStarting(InspectContainerResponse containerInfo, boolean reused) {
+    protected void containerIsStarting(InspectContainerResult containerInfo, boolean reused) {
         containerIsStarting(containerInfo);
     }
 
     @SuppressWarnings({"EmptyMethod", "UnusedParameters"})
-    protected void containerIsStarted(InspectContainerResponse containerInfo) {
+    protected void containerIsStarted(InspectContainerResult containerInfo) {
     }
 
     @SuppressWarnings({"EmptyMethod", "UnusedParameters"})
     @UnstableAPI
-    protected void containerIsStarted(InspectContainerResponse containerInfo, boolean reused) {
+    protected void containerIsStarted(InspectContainerResult containerInfo, boolean reused) {
         containerIsStarted(containerInfo);
     }
 
@@ -691,7 +695,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
      * the JVM's shutdown hook or by Ryuk.
      */
     @SuppressWarnings({"EmptyMethod", "UnusedParameters"})
-    protected void containerIsStopping(InspectContainerResponse containerInfo) {
+    protected void containerIsStopping(InspectContainerResult containerInfo) {
     }
 
     /**
@@ -700,7 +704,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
      * the JVM's shutdown hook or by Ryuk.
      */
     @SuppressWarnings({"EmptyMethod", "UnusedParameters"})
-    protected void containerIsStopped(InspectContainerResponse containerInfo) {
+    protected void containerIsStopped(InspectContainerResult containerInfo) {
     }
 
     /**
@@ -743,7 +747,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
         return this.getLivenessCheckPorts();
     }
 
-    private void applyConfiguration(CreateContainerCmd createCommand) {
+    private void applyConfiguration(CreateContainerIntent createIntent) {
         HostConfig hostConfig = buildHostConfig();
 
         // PortBindings must contain:
@@ -764,23 +768,24 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
         hostConfig.withPortBindings(new ArrayList<>(allPortBindings.values()));
 
         // Next, ExposedPorts must be set up to publish all of the above ports, both randomized and fixed.
-        createCommand.withExposedPorts(new ArrayList<>(allPortBindings.keySet()));
+        createIntent.withExposedPorts(new ArrayList<>(allPortBindings.keySet()));
 
-        createCommand.withHostConfig(hostConfig);
+        createIntent.withHostConfig(hostConfig);
 
         if (commandParts != null) {
-            createCommand.withCmd(commandParts);
+            createIntent.withCmd(commandParts);
         }
 
-        String[] envArray = env.entrySet().stream()
+        createIntent.withEnv(
+            env.entrySet().stream()
                 .filter(it -> it.getValue() != null)
-                .map(it -> it.getKey() + "=" + it.getValue())
-                .toArray(String[]::new);
-        createCommand.withEnv(envArray);
+                .map(it -> new EnvironmentVariable(it.getKey(), it.getValue()))
+                .toArray(EnvironmentVariable[]::new)
+        );
 
-        boolean shouldCheckFileMountingSupport = binds.size() > 0 && !TestcontainersConfiguration.getInstance().isDisableChecks();
+        boolean shouldCheckFileMountingSupport = hostMounts.size() > 0 && !TestcontainersConfiguration.getInstance().isDisableChecks();
         if (shouldCheckFileMountingSupport) {
-            if (!DockerClientFactory.instance().isFileMountingSupported()) {
+            if (!ContainerControllerFactory.instance().isFileMountingSupported()) {
                 logger().warn(
                     "Unable to mount a file from test host into a running container. " +
                         "This may be a misconfiguration or limitation of your Docker environment. " +
@@ -789,13 +794,13 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
             }
         }
 
-        Bind[] bindsArray = binds.stream()
-                .toArray(Bind[]::new);
-        createCommand.withBinds(bindsArray);
+        HostMount[] bindsArray = hostMounts.stream()
+            .toArray(HostMount[]::new);
+        createIntent.withHostMounts(bindsArray);
 
         VolumesFrom[] volumesFromsArray = volumesFroms.stream()
-                .toArray(VolumesFrom[]::new);
-        createCommand.withVolumesFrom(volumesFromsArray);
+            .toArray(VolumesFrom[]::new);
+        createIntent.withVolumesFrom(volumesFromsArray);
 
         Set<Link> allLinks = new HashSet<>();
         Set<String> allLinkedContainerNetworks = new HashSet<>();
@@ -809,27 +814,27 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
 
             if (allLinks.size() == 0) {
                 throw new ContainerLaunchException("Aborting attempt to link to container " +
-                        linkableContainer.getContainerName() +
-                        " as it is not running");
+                    linkableContainer.getContainerName() +
+                    " as it is not running");
             }
 
             Set<String> linkedContainerNetworks = findAllNetworksForLinkedContainers(linkableContainer);
             allLinkedContainerNetworks.addAll(linkedContainerNetworks);
         }
 
-        createCommand.withLinks(allLinks.toArray(new Link[allLinks.size()]));
+        createIntent.withLinks(allLinks.toArray(new Link[allLinks.size()]));
 
         allLinkedContainerNetworks.remove("bridge");
         if (allLinkedContainerNetworks.size() > 1) {
             logger().warn("Container needs to be on more than one custom network to link to other " +
-                            "containers - this is not currently supported. Required networks are: {}",
-                    allLinkedContainerNetworks);
+                    "containers - this is not currently supported. Required networks are: {}",
+                allLinkedContainerNetworks);
         }
 
         Optional<String> networkForLinks = allLinkedContainerNetworks.stream().findFirst();
         if (networkForLinks.isPresent()) {
             logger().debug("Associating container with network: {}", networkForLinks.get());
-            createCommand.withNetworkMode(networkForLinks.get());
+            createIntent.withNetworkMode(networkForLinks.get());
         }
 
         PortForwardingContainer.INSTANCE.getNetwork().ifPresent(it -> {
@@ -837,60 +842,60 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
         });
 
         String[] extraHostsArray = extraHosts.stream()
-                .toArray(String[]::new);
-        createCommand.withExtraHosts(extraHostsArray);
+            .toArray(String[]::new);
+        createIntent.withExtraHosts(extraHostsArray);
 
         if (network != null) {
-            createCommand.withNetworkMode(network.getId());
-            createCommand.withAliases(this.networkAliases);
+            createIntent.withNetworkMode(network.getId());
+            createIntent.withAliases(this.networkAliases);
         } else if (networkMode != null) {
-            createCommand.withNetworkMode(networkMode);
+            createIntent.withNetworkMode(networkMode);
         }
 
         if (workingDirectory != null) {
-            createCommand.withWorkingDir(workingDirectory);
+            createIntent.withWorkingDir(workingDirectory);
         }
 
         if (privilegedMode) {
-            createCommand.withPrivileged(privilegedMode);
+            createIntent.withPrivileged(privilegedMode);
         }
 
-        createContainerCmdModifiers.forEach(hook -> hook.accept(createCommand));
+        createContainerCmdModifiers.forEach(hook -> hook.accept(createIntent));
 
         Map<String, String> combinedLabels = new HashMap<>();
         combinedLabels.putAll(labels);
-        if (createCommand.getLabels() != null) {
-            combinedLabels.putAll(createCommand.getLabels());
+        if (createIntent.getLabels() != null) {
+            combinedLabels.putAll(createIntent.getLabels());
         }
 
-        createCommand.withLabels(combinedLabels);
+        createIntent.withLabels(combinedLabels);
     }
 
     private Set<Link> findLinksFromThisContainer(String alias, LinkableContainer linkableContainer) {
-        return dockerClient.listContainersCmd()
-                .withStatusFilter(Arrays.asList("running"))
-                .exec().stream()
-                .flatMap(container -> Stream.of(container.getNames()))
-                .filter(name -> name.endsWith(linkableContainer.getContainerName()))
-                .map(name -> new Link(name, alias))
-                .collect(Collectors.toSet());
+        return containerController.listContainersIntent()
+            .withStatusFilter(Arrays.asList("running"))
+            .perform().stream()
+            .flatMap(container -> Stream.of(container.getNames()))
+            .filter(name -> name.endsWith(linkableContainer.getContainerName()))
+            .map(name -> new Link(name, alias))
+            .collect(Collectors.toSet());
     }
 
     private Set<String> findAllNetworksForLinkedContainers(LinkableContainer linkableContainer) {
-        return dockerClient.listContainersCmd().exec().stream()
-                .filter(container -> container.getNames()[0].endsWith(linkableContainer.getContainerName()))
-                .filter(container -> container.getNetworkSettings() != null &&
-                        container.getNetworkSettings().getNetworks() != null)
-                .flatMap(container -> container.getNetworkSettings().getNetworks().keySet().stream())
-                .distinct()
-                .collect(Collectors.toSet());
+        return containerController.listContainersIntent().perform().stream()
+            .filter(container -> container.getNames()[0].endsWith(linkableContainer.getContainerName()))
+            .filter(container -> container.getNetworkSettings() != null &&
+                container.getNetworkSettings().getNetworks() != null)
+            .flatMap(container -> container.getNetworkSettings().getNetworks().keySet().stream())
+            .distinct()
+            .collect(Collectors.toSet());
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    public SELF waitingFor(@NonNull org.testcontainers.containers.wait.strategy.WaitStrategy waitStrategy) {
+    public SELF waitingFor(@NonNull WaitStrategy waitStrategy) {
         this.waitStrategy = waitStrategy;
         return self();
     }
@@ -901,24 +906,24 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
      *
      * @return the {@link WaitStrategy} to use
      */
-    protected org.testcontainers.containers.wait.strategy.WaitStrategy getWaitStrategy() {
+    protected WaitStrategy getWaitStrategy() {
         return waitStrategy;
     }
 
     @Override
-    public void setWaitStrategy(org.testcontainers.containers.wait.strategy.WaitStrategy waitStrategy) {
+    public void setWaitStrategy(WaitStrategy waitStrategy) {
         this.waitStrategy = waitStrategy;
     }
 
     /**
      * Wait until the container has started. The default implementation simply
      * waits for a port to start listening; other implementations are available
-     * as implementations of {@link org.testcontainers.containers.wait.strategy.WaitStrategy}
+     * as implementations of {@link WaitStrategy}
      *
-     * @see #waitingFor(org.testcontainers.containers.wait.strategy.WaitStrategy)
+     * @see #waitingFor(WaitStrategy)
      */
     protected void waitUntilContainerStarted() {
-        org.testcontainers.containers.wait.strategy.WaitStrategy waitStrategy = getWaitStrategy();
+        WaitStrategy waitStrategy = getWaitStrategy();
         if (waitStrategy != null) {
             waitStrategy.waitUntilReady(this);
         }
@@ -951,18 +956,18 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
     @Override
     public List<String> getEnv() {
         return env.entrySet().stream()
-                .map(it -> it.getKey() + "=" + it.getValue())
-                .collect(Collectors.toList());
+            .map(it -> it.getKey() + "=" + it.getValue())
+            .collect(Collectors.toList());
     }
 
     @Override
     public void setEnv(List<String> env) {
         this.env = env.stream()
-                .map(it -> it.split("="))
-                .collect(Collectors.toMap(
-                        it -> it[0],
-                        it -> it[1]
-                ));
+            .map(it -> it.split("="))
+            .collect(Collectors.toMap(
+                it -> it[0],
+                it -> it[1]
+            ));
     }
 
     /**
@@ -980,11 +985,10 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
     public void addFileSystemBind(final String hostPath, final String containerPath, final BindMode mode, final SelinuxContext selinuxContext) {
         if (SystemUtils.IS_OS_WINDOWS && hostPath.startsWith("/")) {
             // e.g. Docker socket mount
-            binds.add(new Bind(hostPath, new Volume(containerPath), mode.accessMode, selinuxContext.selContext));
-
+            hostMounts.add(new HostMount(hostPath, new MountPoint(containerPath, mode), selinuxContext.selContext));
         } else {
             final MountableFile mountableFile = MountableFile.forHostPath(hostPath);
-            binds.add(new Bind(mountableFile.getResolvedPath(), new Volume(containerPath), mode.accessMode, selinuxContext.selContext));
+            hostMounts.add(new HostMount(mountableFile.getResolvedPath(), new MountPoint(containerPath, mode), selinuxContext.selContext));
         }
     }
 
@@ -1235,6 +1239,19 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
         return self();
     }
 
+    @Override
+    public SELF withClasspathResourceBind(String resourcePath, String containerPath, BindMode mode, SelinuxContext selinuxContext) {
+        final MountableFile mountableFile = MountableFile.forClasspathResource(resourcePath);
+        addFileSystemBind(mountableFile.getFilesystemPath(), containerPath, mode, selinuxContext);
+
+        return self();
+    }
+
+    @Override
+    public SELF withClasspathResourceBind(String resourcePath, String containerPath, BindMode mode) {
+        return withClasspathResourceBind(resourcePath, containerPath, mode, SelinuxContext.NONE);
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -1388,13 +1405,14 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
      * @param modifier {@link Consumer} of {@link CreateContainerCmd}.
      * @return this
      */
-    public SELF withCreateContainerCmdModifier(Consumer<CreateContainerCmd> modifier) {
+    public SELF withCreateContainerCmdModifier(Consumer<CreateContainerIntent> modifier) {
         createContainerCmdModifiers.add(modifier);
         return self();
     }
 
     /**
      * Size of /dev/shm
+     *
      * @param bytes The number of bytes to assign the shared memory. If null, it will apply the Docker default which is 64 MB.
      * @return this
      */
@@ -1405,6 +1423,7 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
 
     /**
      * First class support for configuring tmpfs
+     *
      * @param mapping path and params of tmpfs/mount flag for container
      * @return this
      */

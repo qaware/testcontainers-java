@@ -1,7 +1,5 @@
 package org.testcontainers.images;
 
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.command.PullImageCmd;
 import com.github.dockerjava.api.exception.DockerClientException;
 import com.github.dockerjava.api.exception.InternalServerErrorException;
 import com.google.common.util.concurrent.Futures;
@@ -10,9 +8,12 @@ import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.ToString;
-import lombok.experimental.Wither;
+import lombok.With;
 import org.slf4j.Logger;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.ContainerControllerFactory;
+import org.testcontainers.controller.ContainerController;
+import org.testcontainers.controller.UnsupportedProviderOperationException;
+import org.testcontainers.controller.intents.PullImageIntent;
 import org.testcontainers.containers.ContainerFetchException;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.DockerLoggerFactory;
@@ -34,11 +35,11 @@ public class RemoteDockerImage extends LazyFuture<String> {
     @ToString.Exclude
     private Future<DockerImageName> imageNameFuture;
 
-    @Wither
+    @With
     private ImagePullPolicy imagePullPolicy = PullPolicy.defaultPolicy();
 
     @ToString.Exclude
-    private DockerClient dockerClient = DockerClientFactory.lazyClient();
+    private ContainerController containerController = ContainerControllerFactory.lazyController();
 
     public RemoteDockerImage(DockerImageName dockerImageName) {
         this.imageNameFuture = CompletableFuture.completedFuture(dockerImageName);
@@ -76,19 +77,19 @@ public class RemoteDockerImage extends LazyFuture<String> {
 
             while (Instant.now().isBefore(lastRetryAllowed)) {
                 try {
-                    PullImageCmd pullImageCmd = dockerClient
-                        .pullImageCmd(imageName.getUnversionedPart())
+                    PullImageIntent pullImageCmd = containerController
+                        .pullImageIntent(imageName.getUnversionedPart())
                         .withTag(imageName.getVersionPart());
 
                     try {
                         pullImageCmd
-                            .exec(new TimeLimitedLoggedPullImageResultCallback(logger))
+                            .perform(new TimeLimitedLoggedPullImageResultCallback(logger))
                             .awaitCompletion();
                     } catch (DockerClientException e) {
                         // Try to fallback to x86
                         pullImageCmd
                             .withPlatform("linux/amd64")
-                            .exec(new TimeLimitedLoggedPullImageResultCallback(logger))
+                            .perform(new TimeLimitedLoggedPullImageResultCallback(logger))
                             .awaitCompletion();
                     }
 
@@ -108,6 +109,9 @@ public class RemoteDockerImage extends LazyFuture<String> {
             throw new ContainerFetchException("Failed to pull image: " + imageName, lastFailure);
         } catch (DockerClientException e) {
             throw new ContainerFetchException("Failed to get Docker client for " + imageName, e);
+        } catch (UnsupportedProviderOperationException e) {
+            logger.trace("Provider does not support image pulling", e);
+            return imageName.asCanonicalNameString();
         }
     }
 

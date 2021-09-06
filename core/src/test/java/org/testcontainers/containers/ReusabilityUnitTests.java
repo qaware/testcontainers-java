@@ -2,7 +2,6 @@ package org.testcontainers.containers;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.InspectContainerCmd;
@@ -10,7 +9,6 @@ import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.ListContainersCmd;
 import com.github.dockerjava.api.command.StartContainerCmd;
 import com.github.dockerjava.api.model.Container;
-import com.github.dockerjava.api.model.NetworkSettings;
 import com.github.dockerjava.core.command.CreateContainerCmdImpl;
 import com.github.dockerjava.core.command.InspectContainerCmdImpl;
 import com.github.dockerjava.core.command.ListContainersCmdImpl;
@@ -24,13 +22,14 @@ import org.junit.runner.RunWith;
 import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.Parameterized;
 import org.mockito.Answers;
-import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 import org.rnorth.visibleassertions.VisibleAssertions;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.controller.intents.InspectContainerResult;
+import org.testcontainers.docker.DockerClientFactory;
 import org.testcontainers.containers.startupcheck.StartupCheckStrategy;
 import org.testcontainers.containers.wait.strategy.AbstractWaitStrategy;
+import org.testcontainers.controller.ContainerController;
 import org.testcontainers.utility.MockTestcontainersConfigurationRule;
 import org.testcontainers.utility.MountableFile;
 import org.testcontainers.utility.TestcontainersConfiguration;
@@ -127,12 +126,12 @@ public class ReusabilityUnitTests {
             }
 
             @Override
-            protected void containerIsStarting(InspectContainerResponse containerInfo, boolean reused) {
+            protected void containerIsStarting(InspectContainerResult containerInfo, boolean reused) {
                 script.add("containerIsStarting(reused=" + reused + ")");
             }
 
             @Override
-            protected void containerIsStarted(InspectContainerResponse containerInfo, boolean reused) {
+            protected void containerIsStarted(InspectContainerResult containerInfo, boolean reused) {
                 script.add("containerIsStarted(reused=" + reused + ")");
             }
         });
@@ -142,10 +141,10 @@ public class ReusabilityUnitTests {
             Mockito.doReturn(false).when(TestcontainersConfiguration.getInstance()).environmentSupportsReuse();
 
             String containerId = randomContainerId();
-            when(client.createContainerCmd(any())).then(createContainerAnswer(containerId));
-            when(client.listContainersCmd()).then(listContainersAnswer());
-            when(client.startContainerCmd(containerId)).then(startContainerAnswer());
-            when(client.inspectContainerCmd(containerId)).then(inspectContainerAnswer());
+            when(client.createContainerIntent(any())).then(createContainerAnswer(containerId));
+            when(client.listContainersIntent()).then(listContainersAnswer());
+            when(client.startContainerIntent(containerId)).then(startContainerAnswer());
+            when(client.inspectContainerIntent(containerId)).then(inspectContainerAnswer());
 
             container.start();
             assertThat(script).containsExactly(
@@ -159,10 +158,10 @@ public class ReusabilityUnitTests {
         public void shouldCallHookIfReused() {
             Mockito.doReturn(true).when(TestcontainersConfiguration.getInstance()).environmentSupportsReuse();
             String containerId = randomContainerId();
-            when(client.createContainerCmd(any())).then(createContainerAnswer(containerId));
+            when(client.createContainerIntent(any())).then(createContainerAnswer(containerId));
             String existingContainerId = randomContainerId();
-            when(client.listContainersCmd()).then(listContainersAnswer(existingContainerId));
-            when(client.inspectContainerCmd(existingContainerId)).then(inspectContainerAnswer());
+            when(client.listContainersIntent()).then(listContainersAnswer(existingContainerId));
+            when(client.inspectContainerIntent(existingContainerId)).then(inspectContainerAnswer());
 
             container.start();
             assertThat(script).containsExactly(
@@ -174,10 +173,10 @@ public class ReusabilityUnitTests {
         @Test
         public void shouldNotCallHookIfNotReused() {
             String containerId = randomContainerId();
-            when(client.createContainerCmd(any())).then(createContainerAnswer(containerId));
-            when(client.listContainersCmd()).then(listContainersAnswer());
-            when(client.startContainerCmd(containerId)).then(startContainerAnswer());
-            when(client.inspectContainerCmd(containerId)).then(inspectContainerAnswer());
+            when(client.createContainerIntent(any())).then(createContainerAnswer(containerId));
+            when(client.listContainersIntent()).then(listContainersAnswer());
+            when(client.startContainerIntent(containerId)).then(startContainerAnswer());
+            when(client.inspectContainerIntent(containerId)).then(inspectContainerAnswer());
 
             container.start();
             assertThat(script).containsExactly(
@@ -202,29 +201,29 @@ public class ReusabilityUnitTests {
         @Test
         public void shouldStartIfListReturnsEmpty() {
             String containerId = randomContainerId();
-            when(client.createContainerCmd(any())).then(createContainerAnswer(containerId));
-            when(client.listContainersCmd()).then(listContainersAnswer());
-            when(client.startContainerCmd(containerId)).then(startContainerAnswer());
-            when(client.inspectContainerCmd(containerId)).then(inspectContainerAnswer());
+            when(client.createContainerIntent(any())).then(createContainerAnswer(containerId));
+            when(client.listContainersIntent()).then(listContainersAnswer());
+            when(client.startContainerIntent(containerId)).then(startContainerAnswer());
+            when(client.inspectContainerIntent(containerId)).then(inspectContainerAnswer());
 
             container.start();
 
-            Mockito.verify(client, Mockito.atLeastOnce()).startContainerCmd(containerId);
+            Mockito.verify(client, Mockito.atLeastOnce()).startContainerIntent(containerId);
         }
 
         @Test
         public void shouldReuseIfListReturnsID() {
             Mockito.doReturn(true).when(TestcontainersConfiguration.getInstance()).environmentSupportsReuse();
             String containerId = randomContainerId();
-            when(client.createContainerCmd(any())).then(createContainerAnswer(containerId));
+            when(client.createContainerIntent(any())).then(createContainerAnswer(containerId));
             String existingContainerId = randomContainerId();
-            when(client.listContainersCmd()).then(listContainersAnswer(existingContainerId));
-            when(client.inspectContainerCmd(existingContainerId)).then(inspectContainerAnswer());
+            when(client.listContainersIntent()).then(listContainersAnswer(existingContainerId));
+            when(client.inspectContainerIntent(existingContainerId)).then(inspectContainerAnswer());
 
             container.start();
 
-            Mockito.verify(client, Mockito.never()).startContainerCmd(containerId);
-            Mockito.verify(client, Mockito.never()).startContainerCmd(existingContainerId);
+            Mockito.verify(client, Mockito.never()).startContainerIntent(containerId);
+            Mockito.verify(client, Mockito.never()).startContainerIntent(existingContainerId);
         }
 
         @Test
@@ -232,9 +231,9 @@ public class ReusabilityUnitTests {
             Mockito.doReturn(false).when(TestcontainersConfiguration.getInstance()).environmentSupportsReuse();
             AtomicReference<CreateContainerCmd> commandRef = new AtomicReference<>();
             String containerId = randomContainerId();
-            when(client.createContainerCmd(any())).then(createContainerAnswer(containerId, commandRef::set));
-            when(client.startContainerCmd(containerId)).then(startContainerAnswer());
-            when(client.inspectContainerCmd(containerId)).then(inspectContainerAnswer());
+            when(client.createContainerIntent(any())).then(createContainerAnswer(containerId, commandRef::set));
+            when(client.startContainerIntent(containerId)).then(startContainerAnswer());
+            when(client.inspectContainerIntent(containerId)).then(inspectContainerAnswer());
 
             container.start();
 
@@ -251,10 +250,10 @@ public class ReusabilityUnitTests {
             Mockito.doReturn(true).when(TestcontainersConfiguration.getInstance()).environmentSupportsReuse();
             AtomicReference<CreateContainerCmd> commandRef = new AtomicReference<>();
             String containerId = randomContainerId();
-            when(client.createContainerCmd(any())).then(createContainerAnswer(containerId, commandRef::set));
-            when(client.listContainersCmd()).then(listContainersAnswer());
-            when(client.startContainerCmd(containerId)).then(startContainerAnswer());
-            when(client.inspectContainerCmd(containerId)).then(inspectContainerAnswer());
+            when(client.createContainerIntent(any())).then(createContainerAnswer(containerId, commandRef::set));
+            when(client.listContainersIntent()).then(listContainersAnswer());
+            when(client.startContainerIntent(containerId)).then(startContainerAnswer());
+            when(client.inspectContainerIntent(containerId)).then(inspectContainerAnswer());
 
             container.start();
 
@@ -268,10 +267,10 @@ public class ReusabilityUnitTests {
             Mockito.doReturn(true).when(TestcontainersConfiguration.getInstance()).environmentSupportsReuse();
             AtomicReference<CreateContainerCmd> commandRef = new AtomicReference<>();
             String containerId = randomContainerId();
-            when(client.createContainerCmd(any())).then(createContainerAnswer(containerId, commandRef::set));
-            when(client.listContainersCmd()).then(listContainersAnswer());
-            when(client.startContainerCmd(containerId)).then(startContainerAnswer());
-            when(client.inspectContainerCmd(containerId)).then(inspectContainerAnswer());
+            when(client.createContainerIntent(any())).then(createContainerAnswer(containerId, commandRef::set));
+            when(client.listContainersIntent()).then(listContainersAnswer());
+            when(client.startContainerIntent(containerId)).then(startContainerAnswer());
+            when(client.inspectContainerIntent(containerId)).then(inspectContainerAnswer());
 
             container.start();
 
@@ -449,21 +448,21 @@ public class ReusabilityUnitTests {
         @Rule
         public MockTestcontainersConfigurationRule configurationMock = new MockTestcontainersConfigurationRule();
 
-        protected DockerClient client = Mockito.mock(DockerClient.class);
+        protected ContainerController client = Mockito.mock(ContainerController.class);
 
         protected <T extends GenericContainer<?>> T makeReusable(T container) {
-            container.dockerClient = client;
+            container.containerController = client;
             container.withNetworkMode("none"); // to disable the port forwarding
             container.withStartupCheckStrategy(new StartupCheckStrategy() {
 
                 @Override
-                public boolean waitUntilStartupSuccessful(DockerClient dockerClient, String containerId) {
+                public boolean waitUntilStartupSuccessful(ContainerController containerController, String containerId) {
                     // Skip DockerClient rate limiter
                     return true;
                 }
 
                 @Override
-                public StartupStatus checkStartupState(DockerClient dockerClient, String containerId) {
+                public StartupStatus checkStartupState(ContainerController containerController, String containerId) {
                     return StartupStatus.SUCCESSFUL;
                 }
             });

@@ -17,8 +17,6 @@ package org.testcontainers.couchbase;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.dockerjava.api.command.InspectContainerResponse;
-import com.github.dockerjava.api.model.ContainerNetwork;
 import lombok.Cleanup;
 import okhttp3.Credentials;
 import okhttp3.FormBody;
@@ -30,6 +28,7 @@ import org.rnorth.ducttape.unreliables.Unreliables;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.HttpWaitStrategy;
 import org.testcontainers.containers.wait.strategy.WaitAllStrategy;
+import org.testcontainers.controller.intents.InspectContainerResult;
 import org.testcontainers.utility.DockerImageName;
 
 import java.io.IOException;
@@ -218,7 +217,7 @@ public class CouchbaseContainer extends GenericContainer<CouchbaseContainer> {
     }
 
     @Override
-    protected void containerIsStarting(final InspectContainerResponse containerInfo) {
+    protected void containerIsStarting(final InspectContainerResult containerInfo) {
         logger().debug("Couchbase container is starting, performing configuration.");
 
         waitUntilNodeIsOnline();
@@ -233,7 +232,7 @@ public class CouchbaseContainer extends GenericContainer<CouchbaseContainer> {
     }
 
     @Override
-    protected void containerIsStarted(InspectContainerResponse containerInfo) {
+    protected void containerIsStarted(InspectContainerResult containerInfo) {
         createBuckets();
         logger().info("Couchbase container is ready! UI available at http://{}:{}", getHost(), getMappedPort(MGMT_PORT));
     }
@@ -433,10 +432,7 @@ public class CouchbaseContainer extends GenericContainer<CouchbaseContainer> {
      * Helper method to extract the internal IP address based on the network configuration.
      */
     private String getInternalIpAddress() {
-        return getContainerInfo().getNetworkSettings().getNetworks().values().stream()
-            .findFirst()
-            .map(ContainerNetwork::getIpAddress)
-            .orElseThrow(() -> new IllegalStateException("No network available to extract the internal IP from!"));
+        return getContainerInfo().getNetworkSettings().getInternalContainerIp();
     }
 
     /**
