@@ -30,14 +30,16 @@ public class BuildImageK8sIntent implements BuildImageIntent {
 
     private final KanikoBuildParams buildParams = new KanikoBuildParams();
 
-
-
     public BuildImageK8sIntent(
         KubernetesContext ctx,
         InputStream in
     ) {
         this.ctx = ctx;
         this.in = in;
+    }
+
+    public KanikoBuildParams getExtendedBuildParams() {
+        return buildParams;
     }
 
     @Override

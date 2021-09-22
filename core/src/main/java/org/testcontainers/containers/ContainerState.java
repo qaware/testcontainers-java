@@ -1,6 +1,5 @@
 package org.testcontainers.containers;
 
-import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.HealthState;
 import com.github.dockerjava.api.exception.DockerException;
 import com.github.dockerjava.api.model.ExposedPort;
@@ -18,7 +17,6 @@ import org.testcontainers.ContainerControllerFactory;
 import org.testcontainers.controller.ContainerController;
 import org.testcontainers.controller.intents.InspectContainerResult;
 import org.testcontainers.controller.model.Binding;
-import org.testcontainers.docker.DockerClientFactory;
 import org.testcontainers.containers.output.OutputFrame;
 import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.utility.LogUtils;

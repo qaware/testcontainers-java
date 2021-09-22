@@ -19,7 +19,7 @@ public class KanikoBuildParams {
     private boolean disabledCache;
     private Map<String, String> labels;
     private boolean disabledPush = false;
-
+    private boolean skipTlsVerify = false;
 
     public String[] createBuildCommand() {
         List<String> cmd = new ArrayList<>();
@@ -46,6 +46,10 @@ public class KanikoBuildParams {
         if(tag != null && !tag.isEmpty()) {
             cmd.add("--destination");
             cmd.add(tag);
+        }
+
+        if(skipTlsVerify) {
+            cmd.add("--skip-tls-verify");
         }
 
         if(dockerFile != null) {

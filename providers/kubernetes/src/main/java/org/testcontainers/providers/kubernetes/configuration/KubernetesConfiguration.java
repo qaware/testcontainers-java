@@ -21,6 +21,7 @@ public class KubernetesConfiguration {
     private static final String TEMP_REGISTRY_INGRESS_HOST = "PROVIDER_KUBERNETES_TEMP_REGISTRY_INGRESS_HOST";
     private static final String TEMP_REGISTRY_INGRESS_ANNOTATIONS = "PROVIDER_KUBERNETES_TEMP_REGISTRY_INGRESS_ANNOTATIONS";
     private static final String TEMP_REGISTRY_INGRESS_CERT = "PROVIDER_KUBERNETES_TEMP_REGISTRY_INGRESS_CERT";
+    private static final String TEMP_REGISTRY_DISABLE_CERT_CHECK = "PROVIDER_KUBERNETES_TEMP_REGISTRY_DISABLE_CERT_CHECK";
 
     private final CombinedConfigurationSource configurationSource;
 
@@ -62,8 +63,23 @@ public class KubernetesConfiguration {
         return configurationSource.getEnvVarOrProperty(TEMP_REGISTRY_INGRESS_CERT);
     }
 
+    public Optional<Boolean> getTemporaryIngressDisableCertCheck() {
+        return configurationSource.getEnvVarOrProperty(TEMP_REGISTRY_DISABLE_CERT_CHECK).map(this::parseBoolean);
+    }
+
     public CombinedConfigurationSource getConfigurationSource() {
         return configurationSource;
+    }
+
+    private boolean parseBoolean(String v) {
+        if(v == null) {
+            return false;
+        }
+        if (v.isEmpty() || v.isEmpty()) {
+            return true;
+        }
+        String canonicalValue = v.toLowerCase().trim();
+        return canonicalValue.equals("true") || canonicalValue.equals("1") || canonicalValue.equals("yes");
     }
 
     private Map<String, String> parseMap(String v) {

@@ -1,13 +1,10 @@
 package org.testcontainers.providers.kubernetes.intents;
 
-import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apps.ReplicaSet;
 import io.fabric8.kubernetes.client.dsl.RollableScalableResource;
 import org.testcontainers.controller.intents.RemoveContainerIntent;
 import org.testcontainers.providers.kubernetes.KubernetesContext;
 import org.testcontainers.providers.kubernetes.networking.NetworkStrategy;
-
-import java.util.Optional;
 
 public class RemoveContainerK8sIntent implements RemoveContainerIntent {
 

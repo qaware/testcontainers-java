@@ -191,8 +191,13 @@ public class KubernetesContainerController implements ContainerController {
     }
 
     @Override
-    public BuildImageIntent buildImageIntent(InputStream in) {
+    public BuildImageK8sIntent buildImageIntent(InputStream in) {
         return new BuildImageK8sIntent(ctx, in);
+    }
+
+    @Override
+    public BuildImageIntent buildTemporaryImageIntent(InputStream in) {
+        return repositoryStrategy.setupBuildIntent(buildImageIntent(in));
     }
 
     @Override

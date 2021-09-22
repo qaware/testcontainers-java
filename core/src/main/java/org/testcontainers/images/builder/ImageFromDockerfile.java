@@ -104,7 +104,7 @@ public class ImageFromDockerfile extends LazyFuture<String> implements
             @Cleanup PipedInputStream in = new PipedInputStream();
             @Cleanup PipedOutputStream out = new PipedOutputStream(in);
 
-            BuildImageIntent buildImageCmd = containerController.buildImageIntent(in);
+            BuildImageIntent buildImageCmd = containerController.buildTemporaryImageIntent(in);
             configure(buildImageCmd);
             Map<String, String> labels = new HashMap<>();
             if (buildImageCmd.getLabels() != null) {
