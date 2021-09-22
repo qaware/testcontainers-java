@@ -1,6 +1,5 @@
 package org.testcontainers.providers.kubernetes;
 
-import com.github.dockerjava.api.model.Ports;
 import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apps.Deployment;

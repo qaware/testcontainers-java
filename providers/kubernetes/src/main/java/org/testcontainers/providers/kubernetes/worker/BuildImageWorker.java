@@ -22,7 +22,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.CountDownLatch;
 
-@Slf4j // TODO: Complete or remove
+@Slf4j
 public class BuildImageWorker implements Closeable {
 
     private final Thread workerThread;

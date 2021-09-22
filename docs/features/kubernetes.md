@@ -23,7 +23,7 @@ Using Maven
 <dependency>
     <groupId>org.testcontainers</groupId>
     <artifactId>testcontainers</artifactId>
-    <scope>kubernetes-alpha0.5</scope>
+    <scope>kubernetes-alpha0.6</scope>
 </dependency>
 ```
 
@@ -105,6 +105,9 @@ TESTCONTAINERS_PROVIDER_KUBERNETES_TEMP_REGISTRY_INGRESS_ANNOTATIONS = 'kubernet
 **Be aware** that some ingress controllers are limiting the proxy buffer size, causing the push of larger layers to fail.
 This can be solved by increasing the buffer size using the appropriate annotation (e.g `nginx.ingress.kubernetes.io/proxy-body-size`).
 
+**Please also note** [the rate limitations](https://letsencrypt.org/docs/rate-limits/) enforced by LetsEncrypt.
+You can work around this by using wildcard certificates or providing your own certificates.
+If a self signed certificate is being used, you must assure that is trusted by your Kubernetes nodes and consider setting `TESTCONTAINERS_PROVIDER_KUBERNETES_TEMP_REGISTRY_DISABLE_CERT_CHECK` to `true`.
 
 ## Configuration
 The prefix `TESTCONTAINERS_` is omitted for brevity.
@@ -118,6 +121,7 @@ The prefix `TESTCONTAINERS_` is omitted for brevity.
 | `PROVIDER_KUBERNETES_TEMP_REGISTRY_INGRESS_HOST` | The host to be used for the Ingress exposing the temporary registry. Support variable interpolation. | |
 | `PROVIDER_KUBERNETES_TEMP_REGISTRY_INGRESS_ANNOTATIONS` | Annotations to be applied to the created Ingress that exposes the temporary registry. | |
 | `PROVIDER_KUBERNETES_TEMP_REGISTRY_INGRESS_CERT` | The name of the secret holding the TLS certificate for the registry ingress. | `registry-cert-${random}` |
+| `PROVIDER_KUBERNETES_TEMP_REGISTRY_DISABLE_CERT_CHECK` | Setting this to `true` will disable the TLS certificate verification for the spawned registry as well as for the kaniko build agents. | `false`  |
 
 ### Environment variable interpolation
 Some configuration variables support the interpolation of environment variables and other placeholders.

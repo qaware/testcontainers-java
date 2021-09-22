@@ -8,8 +8,11 @@ import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import io.fabric8.kubernetes.api.model.extensions.IngressBuilder;
 import io.fabric8.kubernetes.api.model.extensions.IngressTLSBuilder;
+import lombok.SneakyThrows;
+import org.testcontainers.controller.intents.BuildImageIntent;
 import org.testcontainers.providers.kubernetes.KubernetesContext;
-import org.testcontainers.providers.kubernetes.KubernetesResourceReaper;
+import org.testcontainers.providers.kubernetes.RecurringException;
+import org.testcontainers.providers.kubernetes.intents.BuildImageK8sIntent;
 
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
@@ -32,7 +35,10 @@ public class TemporaryImageRepositoryStrategy implements RepositoryStrategy {
     private final String ingressHostName;
     private final String ingressTlsSecretName;
     private final Map<String, String> ingressAnnotations;
+    private final boolean skipCertificateCheck;
     private final int containerPort = 5000;
+
+    private RegistryStartupException startupException;
 
 
     private Ingress registryIngress = null;
@@ -41,12 +47,14 @@ public class TemporaryImageRepositoryStrategy implements RepositoryStrategy {
         KubernetesContext context,
         String ingressHostName,
         String ingressTlsSecretName,
-        Map<String, String> ingressAnnotations
+        Map<String, String> ingressAnnotations,
+        boolean skipCertificateCheck
     ) {
         this.context = context;
         this.ingressHostName = ingressHostName;
         this.ingressTlsSecretName = ingressTlsSecretName;
         this.ingressAnnotations = ingressAnnotations;
+        this.skipCertificateCheck = skipCertificateCheck;
     }
 
 
@@ -55,20 +63,40 @@ public class TemporaryImageRepositoryStrategy implements RepositoryStrategy {
         return String.format("%s/testcontainers/%s", getBaseImagePrefix(), UUID.randomUUID().toString().toLowerCase());
     }
 
+    @Override
+    public BuildImageIntent setupBuildIntent(BuildImageK8sIntent buildImageIntent) {
+        if (skipCertificateCheck) {
+            buildImageIntent.getExtendedBuildParams().setSkipTlsVerify(true);
+        }
+        return buildImageIntent;
+    }
+
     private String getBaseImagePrefix() {
         Ingress regIngress = getRegistryIngress();
         return regIngress.getSpec().getRules().get(0).getHost();
     }
 
+    @SneakyThrows
     private synchronized Ingress getRegistryIngress() {
-        if(registryIngress == null) {
-            registryIngress = setup();
+        if (registryIngress == null) {
+            registryIngress = trySetup();
         }
         return registryIngress;
     }
 
+    private Ingress trySetup() throws RecurringException, RegistryStartupException {
+        if (startupException != null) {
+            throw new RecurringException(startupException);
+        }
+        try {
+            return setup();
+        } catch (RegistryStartupException e) {
+            startupException = e;
+            throw e;
+        }
+    }
 
-    private Ingress setup() {
+    private Ingress setup() throws RegistryStartupException {
         Map<String, String> registryLabels = new HashMap<>();
         registryLabels.put("testcontainers-component", "registry");
         // @formatter:off
@@ -103,7 +131,6 @@ public class TemporaryImageRepositoryStrategy implements RepositoryStrategy {
         // @formatter:on
 
 
-
         Deployment createdDeployment = context.getClient()
             .apps()
             .deployments()
@@ -132,37 +159,37 @@ public class TemporaryImageRepositoryStrategy implements RepositoryStrategy {
         // @formatter:on
 
         Service createdService = context.getClient()
-                .services()
-                .create(service);
+            .services()
+            .create(service);
 
         context.getResourceReaper().registerServiceForCleanup(createdService);
 
         // @formatter:on
         Ingress ingress = new IngressBuilder()
             .editOrNewMetadata()
-                .withName("registry")
-                .withNamespace(context.getNamespaceProvider().getNamespace())
-                .withLabels(registryLabels)
-                .withAnnotations(ingressAnnotations)
+            .withName("registry")
+            .withNamespace(context.getNamespaceProvider().getNamespace())
+            .withLabels(registryLabels)
+            .withAnnotations(ingressAnnotations)
             .endMetadata()
             .editOrNewSpec()
-                .addNewRule()
-                    .withHost(ingressHostName)
-                    .editOrNewHttp()
-                        .addNewPath()
-                            .editOrNewBackend()
-                                .withServiceName(createdService.getMetadata().getName())
-                                .withServicePort(new IntOrString(REGISTRY_PORT_NAME))
-                            .endBackend()
-                        .endPath()
-                    .endHttp()
-                .endRule()
-                .addToTls(
-                    new IngressTLSBuilder()
-                        .withHosts(ingressHostName)
-                        .withSecretName(ingressTlsSecretName)
-                        .build()
-                )
+            .addNewRule()
+            .withHost(ingressHostName)
+            .editOrNewHttp()
+            .addNewPath()
+            .editOrNewBackend()
+            .withServiceName(createdService.getMetadata().getName())
+            .withServicePort(new IntOrString(REGISTRY_PORT_NAME))
+            .endBackend()
+            .endPath()
+            .endHttp()
+            .endRule()
+            .addToTls(
+                new IngressTLSBuilder()
+                    .withHosts(ingressHostName)
+                    .withSecretName(ingressTlsSecretName)
+                    .build()
+            )
             .endSpec()
             .build();
         // @formatter:off
@@ -181,6 +208,10 @@ public class TemporaryImageRepositoryStrategy implements RepositoryStrategy {
             .withName(createdDeployment.getMetadata().getName())
             .waitUntilReady(3, TimeUnit.MINUTES);
 
+        if(skipCertificateCheck) {
+            return ingress;
+        }
+
         try {
             Instant started = Instant.now();
             while(true) {
@@ -193,11 +224,9 @@ public class TemporaryImageRepositoryStrategy implements RepositoryStrategy {
                 }
                 Thread.sleep(TimeUnit.SECONDS.toMillis(10));
             }
-        }catch (InterruptedException ignored) {
-        }
+        }catch (InterruptedException ignored) { }
 
-        throw new RuntimeException("Timed out waiting for TLS to be available"); // TODO: Throw dedicated exception
-
+        throw new RegistryStartupException("Timed out waiting for TLS to be available");
     }
 
     private boolean probeTLS(String host) {

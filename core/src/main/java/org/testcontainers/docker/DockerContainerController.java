@@ -209,6 +209,11 @@ public class DockerContainerController implements ContainerController {
     }
 
     @Override
+    public BuildImageIntent buildTemporaryImageIntent(InputStream in) {
+        return buildImageIntent(in);
+    }
+
+    @Override
     public CreateNetworkIntent createNetworkIntent() {
         return new CreateNetworkDockerIntent(dockerClient.createNetworkCmd());
     }

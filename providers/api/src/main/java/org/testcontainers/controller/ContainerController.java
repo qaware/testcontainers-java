@@ -82,6 +82,8 @@ public interface ContainerController {
 
     BuildImageIntent buildImageIntent(InputStream in);
 
+    BuildImageIntent buildTemporaryImageIntent(InputStream in);
+
     CreateNetworkIntent createNetworkIntent();
 
 

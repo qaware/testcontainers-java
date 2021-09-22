@@ -1,6 +1,5 @@
 package org.testcontainers.providers.kubernetes;
 
-import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.NamespaceBuilder;
 import io.fabric8.kubernetes.client.DefaultKubernetesClient;
@@ -18,7 +17,6 @@ import org.testcontainers.providers.kubernetes.repository.RepositoryStrategy;
 import org.testcontainers.providers.kubernetes.repository.TemporaryImageRepositoryStrategy;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -89,7 +87,8 @@ public class KubernetesContainerProvider implements ContainerProvider {
                 templateRenderer.render(
                     configuration.getTemporaryIngressCert().orElse("registry-cert-${random}")
                 ),
-                configuration.getTemporaryRegistryIngressAnnotations().orElseGet(Collections::emptyMap)
+                configuration.getTemporaryRegistryIngressAnnotations().orElseGet(Collections::emptyMap),
+                configuration.getTemporaryIngressDisableCertCheck().orElse(false)
             ))
             .orElseGet(NoRepositoryStrategy::new);
 

@@ -17,7 +17,6 @@ import org.rnorth.ducttape.ratelimits.RateLimiter;
 import org.rnorth.ducttape.ratelimits.RateLimiterBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.testcontainers.ContainerControllerFactory;
 import org.testcontainers.controller.ContainerController;
 import org.testcontainers.controller.ResourceCleaner;
 import org.testcontainers.controller.intents.InspectContainerResult;
