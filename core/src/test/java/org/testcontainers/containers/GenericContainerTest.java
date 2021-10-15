@@ -1,8 +1,5 @@
 package org.testcontainers.containers;
 
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.command.InspectContainerResponse;
-import com.github.dockerjava.api.command.InspectContainerResponse.ContainerState;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.Info;
 import com.github.dockerjava.api.model.Ports;
@@ -15,11 +12,13 @@ import org.apache.commons.io.FileUtils;
 import org.assertj.core.api.Assumptions;
 import org.junit.Test;
 import org.rnorth.ducttape.unreliables.Unreliables;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.controller.intents.InspectContainerResult;
+import org.testcontainers.controller.model.ContainerState;
+import org.testcontainers.docker.DockerClientFactory;
 import org.testcontainers.TestImages;
-import org.testcontainers.containers.startupcheck.OneShotStartupCheckStrategy;
 import org.testcontainers.containers.startupcheck.StartupCheckStrategy;
 import org.testcontainers.containers.wait.strategy.AbstractWaitStrategy;
+import org.testcontainers.controller.ContainerController;
 import org.testcontainers.images.builder.ImageFromDockerfile;
 
 import java.util.Arrays;
@@ -30,11 +29,9 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.hamcrest.CoreMatchers.equalTo;
 import static org.rnorth.visibleassertions.VisibleAssertions.assertEquals;
 import static org.rnorth.visibleassertions.VisibleAssertions.assertThrows;
 import static org.rnorth.visibleassertions.VisibleAssertions.assertTrue;
-import static org.testcontainers.TestImages.TINY_IMAGE;
 
 public class GenericContainerTest {
 
@@ -87,7 +84,7 @@ public class GenericContainerTest {
         try (GenericContainer<?> container = new GenericContainer<>(image).withExposedPorts(8080)) {
             container.start();
 
-            InspectContainerResponse inspectedContainer = container.getContainerInfo();
+            InspectContainerResult inspectedContainer = container.getContainerInfo();
 
             List<Integer> exposedPorts = Arrays.stream(inspectedContainer.getConfig().getExposedPorts())
                 .map(ExposedPort::getPort)
@@ -149,7 +146,7 @@ public class GenericContainerTest {
     static class NoopStartupCheckStrategy extends StartupCheckStrategy {
 
         @Override
-        public StartupStatus checkStartupState(DockerClient dockerClient, String containerId) {
+        public StartupStatus checkStartupState(ContainerController containerController, String containerId) {
             return StartupStatus.SUCCESSFUL;
         }
     }
@@ -159,13 +156,13 @@ public class GenericContainerTest {
     @Slf4j
     static class WaitForExitedState extends AbstractWaitStrategy {
 
-        Predicate<ContainerState> predicate;
+        Predicate<org.testcontainers.controller.model.ContainerState> predicate;
 
         @Override
         @SneakyThrows
         protected void waitUntilReady() {
             Unreliables.retryUntilTrue(5, TimeUnit.SECONDS, () -> {
-                ContainerState state = waitStrategyTarget.getCurrentContainerInfo().getState();
+                org.testcontainers.controller.model.ContainerState state = waitStrategyTarget.getCurrentContainerInfo().getState();
 
                 log.debug("Current state: {}", state);
                 if (!"exited".equalsIgnoreCase(state.getStatus())) {

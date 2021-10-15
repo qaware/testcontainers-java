@@ -1,12 +1,13 @@
 package org.testcontainers.containers;
 
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.model.Bind;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.Value;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.ContainerControllerFactory;
+import org.testcontainers.controller.ContainerController;
+import org.testcontainers.controller.model.BindMode;
+import org.testcontainers.controller.model.HostMount;
 import org.testcontainers.images.ImagePullPolicy;
 import org.testcontainers.containers.output.OutputFrame;
 import org.testcontainers.containers.startupcheck.StartupCheckStrategy;
@@ -302,6 +303,32 @@ public interface Container<SELF extends Container<SELF>> extends LinkableContain
      */
     SELF withClasspathResourceMapping(String resourcePath, String containerPath, BindMode mode, SelinuxContext selinuxContext);
 
+
+    // TODO: Explain difference to resource mapping
+    /**
+     * Map a resource (file or directory) on the classpath to a path inside the container.
+     * This will only work if you are running your tests outside a Docker container.
+     *
+     * @param resourcePath   path to the resource on the classpath (relative to the classpath root; should not start with a leading slash)
+     * @param containerPath  path this should be mapped to inside the container
+     * @param mode           access mode for the file
+     * @param selinuxContext selinux context argument to use for this file
+     * @return this
+     */
+    SELF withClasspathResourceBind(String resourcePath, String containerPath, BindMode mode, SelinuxContext selinuxContext);
+
+    // TODO: Explain difference to resource mapping
+    /**
+     * Map a resource (file or directory) on the classpath to a path inside the container.
+     * This will only work if you are running your tests outside a Docker container.
+     *
+     * @param resourcePath   path to the resource on the classpath (relative to the classpath root; should not start with a leading slash)
+     * @param containerPath  path this should be mapped to inside the container
+     * @param mode           access mode for the file
+     * @return this
+     */
+    SELF withClasspathResourceBind(String resourcePath, String containerPath, BindMode mode);
+
     /**
      * Set the duration of waiting time until container treated as started.
      * @see WaitStrategy#waitUntilReady(org.testcontainers.containers.wait.strategy.WaitStrategyTarget)
@@ -374,7 +401,7 @@ public interface Container<SELF extends Container<SELF>> extends LinkableContain
      * @param consumer consumer that the frames should be sent to
      */
     default void followOutput(Consumer<OutputFrame> consumer) {
-        LogUtils.followOutput(DockerClientFactory.instance().client(), getContainerId(), consumer);
+        LogUtils.followOutput(ContainerControllerFactory.instance().controller(), getContainerId(), consumer);
     }
 
     /**
@@ -385,7 +412,7 @@ public interface Container<SELF extends Container<SELF>> extends LinkableContain
      * @param types    types that should be followed (one or both of STDOUT, STDERR)
      */
     default void followOutput(Consumer<OutputFrame> consumer, OutputFrame.OutputType... types) {
-        LogUtils.followOutput(DockerClientFactory.instance().client(), getContainerId(), consumer, types);
+        LogUtils.followOutput(ContainerControllerFactory.instance().controller(), getContainerId(), consumer, types);
     }
 
 
@@ -416,7 +443,7 @@ public interface Container<SELF extends Container<SELF>> extends LinkableContain
 
     String[] getCommandParts();
 
-    List<Bind> getBinds();
+    List<HostMount> getHostMounts();
 
     /**
      * @deprecated Links are deprecated (see <a href="https://github.com/testcontainers/testcontainers-java/issues/465">#465</a>). Please use {@link Network} features instead.
@@ -424,7 +451,7 @@ public interface Container<SELF extends Container<SELF>> extends LinkableContain
     @Deprecated
     Map<String, LinkableContainer> getLinkedContainers();
 
-    DockerClient getDockerClient();
+    ContainerController getContainerController();
 
     void setExposedPorts(List<Integer> exposedPorts);
 
@@ -438,7 +465,7 @@ public interface Container<SELF extends Container<SELF>> extends LinkableContain
 
     void setCommandParts(String[] commandParts);
 
-    void setBinds(List<Bind> binds);
+    void setHostMounts(List<HostMount> hostMounts);
 
     /**
      * @deprecated Links are deprecated (see <a href="https://github.com/testcontainers/testcontainers-java/issues/465">#465</a>). Please use {@link Network} features instead.

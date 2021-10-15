@@ -17,13 +17,12 @@ import org.junit.platform.commons.support.AnnotationSupport;
 import org.junit.platform.commons.util.AnnotationUtils;
 import org.junit.platform.commons.util.Preconditions;
 import org.junit.platform.commons.util.ReflectionUtils;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.docker.DockerClientFactory;
 import org.testcontainers.lifecycle.Startable;
 import org.testcontainers.lifecycle.TestDescription;
 import org.testcontainers.lifecycle.TestLifecycleAware;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -148,7 +147,7 @@ class TestcontainersExtension implements BeforeEachCallback, BeforeAllCallback, 
 
     boolean isDockerAvailable() {
         try {
-            DockerClientFactory.instance().client();
+            DockerClientFactory.instance().client(); // TODO: Use fresh instance maybe?
             return true;
         } catch (Throwable ex) {
             return false;

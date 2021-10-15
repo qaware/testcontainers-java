@@ -1,11 +1,9 @@
-package org.testcontainers;
+package org.testcontainers.docker;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.DockerClientDelegate;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerCmd;
-import com.github.dockerjava.api.command.PullImageCmd;
-import com.github.dockerjava.api.exception.DockerClientException;
 import com.github.dockerjava.api.exception.InternalServerErrorException;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.AccessMode;
@@ -17,15 +15,14 @@ import com.github.dockerjava.api.model.Volume;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import lombok.Getter;
-import lombok.SneakyThrows;
 import lombok.Synchronized;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.SystemUtils;
+import org.testcontainers.UnstableAPI;
 import org.testcontainers.dockerclient.DockerClientProviderStrategy;
 import org.testcontainers.dockerclient.DockerMachineClientProviderStrategy;
 import org.testcontainers.dockerclient.TransportConfig;
-import org.testcontainers.images.TimeLimitedLoggedPullImageResultCallback;
 import org.testcontainers.utility.ComparableVersion;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.ImageNameSubstitutor;
@@ -61,8 +58,8 @@ public class DockerClientFactory {
     public static final String SESSION_ID = UUID.randomUUID().toString();
 
     public static final Map<String, String> DEFAULT_LABELS = ImmutableMap.of(
-            TESTCONTAINERS_LABEL, "true",
-            TESTCONTAINERS_SESSION_ID_LABEL, SESSION_ID
+        TESTCONTAINERS_LABEL, "true",
+        TESTCONTAINERS_SESSION_ID_LABEL, SESSION_ID
     );
 
     private static final DockerImageName TINY_IMAGE = DockerImageName.parse("alpine:3.14");
@@ -122,14 +119,16 @@ public class DockerClientFactory {
     }
 
     /**
-     * Checks whether Docker is accessible and {@link #client()} is able to produce a client.
+     * Checks whether Docker is accessible and {@link #createNewDockerClient()} is able to produce a client.
+     *
      * @return true if Docker is available, false if not.
      */
     public synchronized boolean isDockerAvailable() {
         try {
-            client();
-            return true;
-        } catch (IllegalStateException ex) {
+            // We must not close the client, as it would also close the underlying connection pool
+            DockerClient newDockerClient = createNewDockerClient();
+            return newDockerClient.authConfig() != null;
+        } catch (Throwable ex) {
             return false;
         }
     }
@@ -164,21 +163,11 @@ public class DockerClientFactory {
             ? dockerHost.getRawPath()
             : "/var/run/docker.sock";
         return SystemUtils.IS_OS_WINDOWS
-               ? "/" + path
-               : path;
+            ? "/" + path
+            : path;
     }
 
-    /**
-     *
-     * @return a new initialized Docker client
-     */
-    @Synchronized
-    public DockerClient client() {
-
-        if (dockerClient != null) {
-            return dockerClient;
-        }
-
+    private DockerClient createNewDockerClient() {
         // fail-fast if checks have failed previously
         if (cachedClientFailure != null) {
             log.debug("There is a cached checks failure - throwing", cachedClientFailure);
@@ -188,11 +177,16 @@ public class DockerClientFactory {
         final DockerClientProviderStrategy strategy = getOrInitializeStrategy();
 
         log.info("Docker host IP address is {}", strategy.getDockerHostIpAddress());
-        final DockerClient client = new DockerClientDelegate() {
+        return strategy.getDockerClient();
+    }
 
-            @Getter
-            final DockerClient dockerClient = strategy.getDockerClient();
+    @Synchronized
+    public DockerClient client() {
+        if (dockerClient != null) {
+            return dockerClient;
+        }
 
+        final DockerClient client = new DelegatingDockerClient(createNewDockerClient()) {
             @Override
             public void close() {
                 throw new IllegalStateException("You should never close the global DockerClient!");
@@ -204,19 +198,31 @@ public class DockerClientFactory {
         activeApiVersion = version.getApiVersion();
         activeExecutionDriver = dockerInfo.getExecutionDriver();
         log.info("Connected to docker: \n" +
-                "  Server Version: " + dockerInfo.getServerVersion() + "\n" +
-                "  API Version: " + activeApiVersion + "\n" +
-                "  Operating System: " + dockerInfo.getOperatingSystem() + "\n" +
-                "  Total Memory: " + dockerInfo.getMemTotal() / (1024 * 1024) + " MB");
+            "  Server Version: " + dockerInfo.getServerVersion() + "\n" +
+            "  API Version: " + activeApiVersion + "\n" +
+            "  Operating System: " + dockerInfo.getOperatingSystem() + "\n" +
+            "  Total Memory: " + dockerInfo.getMemTotal() / (1024 * 1024) + " MB");
+
+        dockerClient = client;
+        return dockerClient;
+    }
+
+    /**
+     * a new initialized Docker client
+     */
+    @Synchronized
+    public void startup(DockerContainerController controller) { // TODO: Move logic to provider
 
         final String ryukContainerId;
+        final DockerClient client = controller.getClient();
+
+        Version version = client.versionCmd().exec();
 
         boolean useRyuk = !Boolean.parseBoolean(System.getenv("TESTCONTAINERS_RYUK_DISABLED"));
-        if (useRyuk) {
+        if (useRyuk) { // TODO: Relocate the ruyk startup
             log.debug("Ryuk is enabled");
             try {
-                //noinspection deprecation
-                ryukContainerId = ResourceReaper.start(client);
+                ryukContainerId =  controller.getResourceReaper().start();
             } catch (RuntimeException e) {
                 cachedClientFailure = e;
                 throw e;
@@ -258,8 +264,6 @@ public class DockerClientFactory {
             log.debug("Checks are disabled");
         }
 
-        dockerClient = client;
-        return dockerClient;
     }
 
     private void checkDockerVersion(String dockerVersion) {
@@ -272,26 +276,26 @@ public class DockerClientFactory {
 
         try {
             dockerClient
-                    .execStartCmd(dockerClient.execCreateCmd(id).withAttachStdout(true).withCmd("df", "-P").exec().getId())
-                    .exec(new ResultCallback.Adapter<Frame>() {
-                        @Override
-                        public void onNext(Frame frame) {
-                            if (frame == null) {
-                                return;
-                            }
-                            switch (frame.getStreamType()) {
-                                case RAW:
-                                case STDOUT:
-                                    try {
-                                        outputStream.write(frame.getPayload());
-                                        outputStream.flush();
-                                    } catch (IOException e) {
-                                        onError(e);
-                                    }
-                            }
+                .execStartCmd(dockerClient.execCreateCmd(id).withAttachStdout(true).withCmd("df", "-P").exec().getId())
+                .exec(new ResultCallback.Adapter<Frame>() {
+                    @Override
+                    public void onNext(Frame frame) {
+                        if (frame == null) {
+                            return;
                         }
-                    })
-                    .awaitCompletion();
+                        switch (frame.getStreamType()) {
+                            case RAW:
+                            case STDOUT:
+                                try {
+                                    outputStream.write(frame.getPayload());
+                                    outputStream.flush();
+                                } catch (IOException e) {
+                                    onError(e);
+                                }
+                        }
+                    }
+                })
+                .awaitCompletion();
         } catch (Exception e) {
             log.debug("Can't exec disk checking command", e);
         }
@@ -299,8 +303,8 @@ public class DockerClientFactory {
         DiskSpaceUsage df = parseAvailableDiskSpace(outputStream.toString());
 
         check(
-                "Docker environment should have more than 2GB free disk space",
-                df.availableMB.map(it -> it >= 2048).orElse(true)
+            "Docker environment should have more than 2GB free disk space",
+            df.availableMB.map(it -> it >= 2048).orElse(true)
         );
     }
 
@@ -337,30 +341,11 @@ public class DockerClientFactory {
         }
     }
 
-    /**
-   * Check whether the image is available locally and pull it otherwise
-   */
-    @SneakyThrows
-    public void checkAndPullImage(DockerClient client, String image) {
-        try {
-            client.inspectImageCmd(image).exec();
-        } catch (NotFoundException notFoundException) {
-            PullImageCmd pullImageCmd = client.pullImageCmd(image);
-            try {
-                pullImageCmd.exec(new TimeLimitedLoggedPullImageResultCallback(log)).awaitCompletion();
-            } catch (DockerClientException e) {
-                // Try to fallback to x86
-                pullImageCmd
-                    .withPlatform("linux/amd64")
-                    .exec(new TimeLimitedLoggedPullImageResultCallback(log))
-                    .awaitCompletion();
-            }
-        }
-    }
 
     /**
      * @return the IP address of the host running Docker
      */
+    @Deprecated // TODO: Remove
     public String dockerHostIpAddress() {
         return getOrInitializeStrategy().getDockerHostIpAddress();
     }
@@ -374,9 +359,9 @@ public class DockerClientFactory {
 
         final String tinyImage = ImageNameSubstitutor.instance().apply(TINY_IMAGE).asCanonicalNameString();
 
-        checkAndPullImage(client, tinyImage);
+        client.inspectContainerCmd(tinyImage);
         CreateContainerCmd createContainerCmd = client.createContainerCmd(tinyImage)
-                .withLabels(DEFAULT_LABELS);
+            .withLabels(DEFAULT_LABELS);
         createContainerCmdConsumer.accept(createContainerCmd);
         String id = createContainerCmd.exec().getId();
 
