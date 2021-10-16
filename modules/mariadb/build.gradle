@@ -9,6 +9,7 @@ dependencies {
     compileOnly project(':r2dbc')
     compileOnly 'org.mariadb:r2dbc-mariadb:1.0.3'
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation project(':jdbc-test')
     testImplementation 'org.mariadb.jdbc:mariadb-java-client:2.7.4'
 
