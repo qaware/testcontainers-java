@@ -9,6 +9,7 @@ dependencies {
     compileOnly project(':r2dbc')
     compileOnly 'io.r2dbc:r2dbc-mssql:0.8.7.RELEASE'
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation project(':jdbc-test')
     testImplementation 'com.microsoft.sqlserver:mssql-jdbc:9.4.0.jre8'
 
