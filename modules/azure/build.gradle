@@ -3,6 +3,8 @@ description = "Testcontainers :: Azure"
 dependencies {
     api project(':testcontainers')
 
+
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation 'org.assertj:assertj-core:3.15.0'
     testImplementation 'com.azure:azure-cosmos:4.16.0'
 }
