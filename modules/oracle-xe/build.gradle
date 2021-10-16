@@ -3,6 +3,7 @@ description = "Testcontainers :: JDBC :: Oracle XE"
 dependencies {
     api project(':jdbc')
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation project(':jdbc-test')
     testImplementation 'com.oracle.ojdbc:ojdbc8:19.3.0.0'
 
