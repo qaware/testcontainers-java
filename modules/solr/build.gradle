@@ -3,5 +3,6 @@ description = "Testcontainers :: Solr"
 dependencies {
     api project(':testcontainers')
     testImplementation 'org.apache.solr:solr-solrj:8.3.0'
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
 
 }
