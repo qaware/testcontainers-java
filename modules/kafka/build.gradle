@@ -12,6 +12,7 @@ tasks.japicmp {
 dependencies {
     api project(':testcontainers')
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation 'org.apache.kafka:kafka-clients:3.0.0'
     testImplementation 'org.assertj:assertj-core:3.21.0'
     testImplementation 'com.google.guava:guava:23.0'
