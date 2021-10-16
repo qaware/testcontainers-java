@@ -1,5 +1,0 @@
-description = "Testcontainers :: Modules"
-
-dependencies {
-    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
-}
