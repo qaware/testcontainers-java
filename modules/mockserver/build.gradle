@@ -3,6 +3,7 @@ description = "Testcontainers :: MockServer"
 dependencies {
     api project(':testcontainers')
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation 'org.mock-server:mockserver-client-java:5.5.4'
     testImplementation 'org.rnorth.visible-assertions:visible-assertions:2.1.2'
 }
