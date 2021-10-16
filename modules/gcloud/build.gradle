@@ -3,6 +3,7 @@ description = "Testcontainers :: GCloud"
 dependencies {
     api project(':testcontainers')
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation 'com.google.cloud:google-cloud-datastore:1.102.4'
     testImplementation 'com.google.cloud:google-cloud-firestore:1.33.0'
     testImplementation 'com.google.cloud:google-cloud-pubsub:1.105.0'
