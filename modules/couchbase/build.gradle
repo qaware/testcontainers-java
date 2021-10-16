@@ -3,6 +3,7 @@ description = "Testcontainers :: Couchbase"
 dependencies {
     api project(':testcontainers')
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation 'com.couchbase.client:java-client:3.2.1'
     testImplementation 'org.awaitility:awaitility:4.1.0'
 }
