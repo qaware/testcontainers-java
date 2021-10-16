@@ -3,6 +3,7 @@ description = "Testcontainers :: InfluxDB"
 dependencies {
     api project(':testcontainers')
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     compileOnly 'org.influxdb:influxdb-java:2.22'
     testImplementation 'org.influxdb:influxdb-java:2.21'
 }
