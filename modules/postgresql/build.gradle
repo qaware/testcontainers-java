@@ -9,6 +9,7 @@ dependencies {
     compileOnly project(':r2dbc')
     compileOnly 'io.r2dbc:r2dbc-postgresql:0.8.8.RELEASE'
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation project(':jdbc-test')
     testImplementation project(':test-support')
     testImplementation 'org.postgresql:postgresql:42.2.24'
