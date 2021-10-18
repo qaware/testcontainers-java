@@ -1,6 +1,7 @@
 package org.testcontainers.docker;
 
 import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.DockerClientDelegate;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.exception.InternalServerErrorException;
@@ -91,7 +92,17 @@ public class DockerClientFactory {
     }
 
     public static DockerClient lazyClient() {
-        return LazyDockerClient.INSTANCE;
+        return new DockerClientDelegate() {
+            @Override
+            protected DockerClient getDockerClient() {
+                return instance().client();
+            }
+
+            @Override
+            public String toString() {
+                return "LazyDockerClient";
+            }
+        };
     }
 
     /**
@@ -176,6 +187,9 @@ public class DockerClientFactory {
         }
 
         final DockerClient client = new DelegatingDockerClient(createNewDockerClient()) {
+            @Getter
+            final DockerClient dockerClient = strategy.getDockerClient();
+
             @Override
             public void close() {
                 throw new IllegalStateException("You should never close the global DockerClient!");

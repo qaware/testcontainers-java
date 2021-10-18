@@ -47,7 +47,7 @@ It takes a couple of seconds, but if you want to speed up your tests, you can di
 Testcontainers uses public Docker images to perform different actions like startup checks, VNC recording and others. 
 Some companies disallow the usage of Docker Hub, but you can override `*.image` properties with your own images from your private registry to workaround that.
 
-> **ryuk.container.image = testcontainers/ryuk:0.3.2**
+> **ryuk.container.image = testcontainers/ryuk:0.3.3**
 > Performs fail-safe cleanup of containers, and always required (unless [Ryuk is disabled](#disabling-ryuk))
 
 > **tinyimage.container.image = alpine:3.14**  
@@ -74,7 +74,7 @@ Some companies disallow the usage of Docker Hub, but you can override `*.image` 
 
 ## Customizing Ryuk resource reaper
 
-> **ryuk.container.image = testcontainers/ryuk:0.3.2**
+> **ryuk.container.image = testcontainers/ryuk:0.3.3**
 > The resource reaper is responsible for container removal and automatic cleanup of dead containers at JVM shutdown
 
 > **ryuk.container.privileged = false**
@@ -125,4 +125,8 @@ docker.client.strategy=org.testcontainers.dockerclient.EnvironmentAndSystemPrope
 docker.host=tcp\://my.docker.host\:1234     # Equivalent to the DOCKER_HOST environment variable. Colons should be escaped.
 docker.tls.verify=1                         # Equivalent to the DOCKER_TLS_VERIFY environment variable
 docker.cert.path=/some/path                 # Equivalent to the DOCKER_CERT_PATH environment variable
+```
+In addition, you can deactivate this behaviour by specifying:
+```properties
+dockerconfig.source=autoIgnoringUserProperties # 'auto' by default
 ```
