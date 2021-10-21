@@ -1,13 +1,13 @@
 package org.testcontainers.containers;
 
-import com.github.dockerjava.api.command.CreateNetworkCmd;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Singular;
 import org.junit.rules.ExternalResource;
 import org.junit.rules.TestRule;
-import org.testcontainers.DockerClientFactory;
-import org.testcontainers.utility.ResourceReaper;
+import org.testcontainers.ContainerControllerFactory;
+import org.testcontainers.controller.intents.CreateNetworkIntent;
+import org.testcontainers.docker.DockerClientFactory;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -50,7 +50,7 @@ public interface Network extends AutoCloseable, TestRule {
         private String driver;
 
         @Singular
-        private Set<Consumer<CreateNetworkCmd>> createNetworkCmdModifiers;
+        private Set<Consumer<CreateNetworkIntent>> createNetworkCmdModifiers;
 
         @Deprecated
         private String id;
@@ -67,7 +67,7 @@ public interface Network extends AutoCloseable, TestRule {
         }
 
         private String create() {
-            CreateNetworkCmd createNetworkCmd = DockerClientFactory.instance().client().createNetworkCmd();
+            CreateNetworkIntent createNetworkCmd = ContainerControllerFactory.instance().controller().createNetworkIntent(); // TODO: Rename
 
             createNetworkCmd.withName(name);
             createNetworkCmd.withCheckDuplicate(true);
@@ -80,7 +80,7 @@ public interface Network extends AutoCloseable, TestRule {
                 createNetworkCmd.withDriver(driver);
             }
 
-            for (Consumer<CreateNetworkCmd> consumer : createNetworkCmdModifiers) {
+            for (Consumer<CreateNetworkIntent> consumer : createNetworkCmdModifiers) {
                 consumer.accept(createNetworkCmd);
             }
 
@@ -89,7 +89,7 @@ public interface Network extends AutoCloseable, TestRule {
             labels.putAll(DockerClientFactory.DEFAULT_LABELS);
             createNetworkCmd.withLabels(labels);
 
-            return createNetworkCmd.exec().getId();
+            return createNetworkCmd.perform().getId();
         }
 
         @Override
@@ -100,7 +100,7 @@ public interface Network extends AutoCloseable, TestRule {
         @Override
         public synchronized void close() {
             if (initialized.getAndSet(false)) {
-                ResourceReaper.instance().removeNetworkById(id);
+                ContainerControllerFactory.instance().controller().getResourceReaper().removeNetworkById(id);
             }
         }
     }

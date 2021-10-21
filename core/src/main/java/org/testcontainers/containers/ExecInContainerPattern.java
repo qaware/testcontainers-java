@@ -1,12 +1,12 @@
 package org.testcontainers.containers;
 
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.command.ExecCreateCmdResponse;
-import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.exception.DockerException;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.ContainerControllerFactory;
+import org.testcontainers.controller.ContainerController;
+import org.testcontainers.controller.intents.ExecCreateResult;
+import org.testcontainers.controller.intents.InspectContainerResult;
 import org.testcontainers.containers.output.FrameConsumerResultCallback;
 import org.testcontainers.containers.output.OutputFrame;
 import org.testcontainers.containers.output.ToStringConsumer;
@@ -28,9 +28,9 @@ public class ExecInContainerPattern {
      * <p></p>
      * @param containerInfo the container info
      * @param command the command to execute
-     * @see #execInContainer(InspectContainerResponse, Charset, String...)
+     * @see #execInContainer(InspectContainerResult, Charset, String...)
      */
-    public Container.ExecResult execInContainer(InspectContainerResponse containerInfo, String... command)
+    public Container.ExecResult execInContainer(InspectContainerResult containerInfo, String... command)
         throws UnsupportedOperationException, IOException, InterruptedException {
         return execInContainer(containerInfo, Charset.forName("UTF-8"), command);
     }
@@ -48,7 +48,7 @@ public class ExecInContainerPattern {
      * @throws InterruptedException if the thread waiting for the response is interrupted
      * @throws UnsupportedOperationException if the docker daemon you're connecting to doesn't support "exec".
      */
-    public Container.ExecResult execInContainer(InspectContainerResponse containerInfo, Charset outputCharset, String... command)
+    public Container.ExecResult execInContainer(InspectContainerResult containerInfo, Charset outputCharset, String... command)
         throws UnsupportedOperationException, IOException, InterruptedException {
         if (!TestEnvironment.dockerExecutionDriverSupportsExec()) {
             // at time of writing, this is the expected result in CircleCI.
@@ -64,11 +64,11 @@ public class ExecInContainerPattern {
         String containerId = containerInfo.getId();
         String containerName = containerInfo.getName();
 
-        DockerClient dockerClient = DockerClientFactory.instance().client();
+        ContainerController containerController = ContainerControllerFactory.instance().controller();
 
         log.debug("{}: Running \"exec\" command: {}", containerName, String.join(" ", command));
-        final ExecCreateCmdResponse execCreateCmdResponse = dockerClient.execCreateCmd(containerId)
-            .withAttachStdout(true).withAttachStderr(true).withCmd(command).exec();
+        final ExecCreateResult execCreationResult = containerController.execCreateIntent(containerId)
+            .withAttachStdout(true).withAttachStderr(true).withCmd(command).perform();
 
         final ToStringConsumer stdoutConsumer = new ToStringConsumer();
         final ToStringConsumer stderrConsumer = new ToStringConsumer();
@@ -77,9 +77,9 @@ public class ExecInContainerPattern {
             callback.addConsumer(OutputFrame.OutputType.STDOUT, stdoutConsumer);
             callback.addConsumer(OutputFrame.OutputType.STDERR, stderrConsumer);
 
-            dockerClient.execStartCmd(execCreateCmdResponse.getId()).exec(callback).awaitCompletion();
+            containerController.execStartIntent(execCreationResult.getId()).perform(callback).awaitCompletion();
         }
-        Integer exitCode = dockerClient.inspectExecCmd(execCreateCmdResponse.getId()).exec().getExitCode();
+        Integer exitCode = containerController.inspectExecIntent(execCreationResult.getId()).perform().getExitCode();
 
         final Container.ExecResult result = new Container.ExecResult(
             exitCode,
@@ -91,7 +91,7 @@ public class ExecInContainerPattern {
         return result;
     }
 
-    private boolean isRunning(InspectContainerResponse containerInfo) {
+    private boolean isRunning(InspectContainerResult containerInfo) {
         try {
             return containerInfo != null && containerInfo.getState().getRunning();
         } catch (DockerException e) {

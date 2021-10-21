@@ -25,6 +25,11 @@ file('modules').eachDir { dir ->
     project(":${dir.name}").projectDir = dir
 }
 
+file('providers').eachDir {dir ->
+    include "providers-${dir.name}"
+    project(":providers-${dir.name}").projectDir = dir
+}
+
 include ':docs:examples:junit4:generic'
 include ':docs:examples:junit4:redis'
 include ':docs:examples:junit5:redis'

@@ -1,7 +1,7 @@
 package org.testcontainers.containers.startupcheck;
 
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.command.InspectContainerResponse;
+import org.testcontainers.controller.ContainerController;
+import org.testcontainers.controller.model.ContainerState;
 import org.testcontainers.utility.DockerStatus;
 
 /**
@@ -11,8 +11,8 @@ import org.testcontainers.utility.DockerStatus;
 public class IsRunningStartupCheckStrategy extends StartupCheckStrategy {
 
     @Override
-    public StartupStatus checkStartupState(DockerClient dockerClient, String containerId) {
-        InspectContainerResponse.ContainerState state = getCurrentState(dockerClient, containerId);
+    public StartupStatus checkStartupState(ContainerController containerController, String containerId) {
+        ContainerState state = getCurrentState(containerController, containerId);
         if (state.getRunning()) {
             return StartupStatus.SUCCESSFUL;
         } else if (!DockerStatus.isContainerExitCodeSuccess(state)) {

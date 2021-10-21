@@ -1,13 +1,13 @@
 package org.testcontainers.containers.localstack;
 
-import com.github.dockerjava.api.DockerClient;
 import lombok.AllArgsConstructor;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.ContainerControllerFactory;
+import org.testcontainers.controller.ContainerController;
 import org.testcontainers.utility.DockerImageName;
 
 import java.util.Arrays;
@@ -71,20 +71,16 @@ public class LegacyModeTest {
 
         @BeforeClass
         public static void createCustomTag() {
-            DockerClient dockerClient = DockerClientFactory.instance().client();
-            DockerClientFactory
-                .instance()
-                .checkAndPullImage(
-                    dockerClient,
-                    LOCALSTACK_0_12_IMAGE.asCanonicalNameString()
-                );
-            dockerClient
-                .tagImageCmd(
+            ContainerController containerController = ContainerControllerFactory.instance().controller();
+            containerController.checkAndPullImage(LOCALSTACK_0_12_IMAGE.asCanonicalNameString());
+
+            containerController
+                .tagImageIntent(
                     LOCALSTACK_0_12_IMAGE.asCanonicalNameString(),
                     LOCALSTACK_CUSTOM_TAG.getRepository(),
                     LOCALSTACK_CUSTOM_TAG.getVersionPart()
                 )
-                .exec();
+                .perform();
         }
 
         @Parameterized.Parameters(name = "{0}")

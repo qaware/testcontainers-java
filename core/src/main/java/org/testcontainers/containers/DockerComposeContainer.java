@@ -1,6 +1,5 @@
 package org.testcontainers.containers;
 
-import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.core.LocalDirectorySSLConfig;
 import com.github.dockerjava.transport.SSLConfig;
@@ -17,7 +16,9 @@ import org.apache.commons.lang.SystemUtils;
 import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
 import org.slf4j.Logger;
-import org.testcontainers.DockerClientFactory;
+import org.testcontainers.ContainerControllerFactory;
+import org.testcontainers.controller.ContainerController;
+import org.testcontainers.docker.DockerClientFactory;
 import org.testcontainers.containers.output.OutputFrame;
 import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.startupcheck.IndefiniteWaitOneShotStartupCheckStrategy;
@@ -34,7 +35,6 @@ import org.testcontainers.utility.DockerLoggerFactory;
 import org.testcontainers.utility.LogUtils;
 import org.testcontainers.utility.MountableFile;
 import org.testcontainers.utility.PathUtils;
-import org.testcontainers.utility.ResourceReaper;
 import org.zeroturnaround.exec.InvalidExitValueException;
 import org.zeroturnaround.exec.ProcessExecutor;
 import org.zeroturnaround.exec.stream.slf4j.Slf4jStream;
@@ -56,7 +56,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -64,7 +63,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
-import static org.testcontainers.containers.BindMode.READ_WRITE;
+import static org.testcontainers.controller.model.BindMode.READ_WRITE;
 
 /**
  * Container which launches Docker Compose, for the purposes of launching a defined set of containers.
@@ -79,7 +78,7 @@ public class DockerComposeContainer<SELF extends DockerComposeContainer<SELF>> e
     private final List<File> composeFiles;
     private DockerComposeFiles dockerComposeFiles;
     private final Map<String, Integer> scalingPreferences = new HashMap<>();
-    private DockerClient dockerClient;
+    private ContainerController containerController;
     private boolean localCompose;
     private boolean pull = true;
     private boolean build = false;
@@ -132,7 +131,7 @@ public class DockerComposeContainer<SELF extends DockerComposeContainer<SELF>> e
         this.identifier = identifier;
         this.project = randomProjectId();
 
-        this.dockerClient = DockerClientFactory.instance().client();
+        this.containerController = ContainerControllerFactory.instance().controller();
     }
 
     @Override
@@ -188,7 +187,7 @@ public class DockerComposeContainer<SELF extends DockerComposeContainer<SELF>> e
             .forEach(imageName -> {
                 try {
                     log.info("Preemptively checking local images for '{}', referenced via a compose file or transitive Dockerfile. If not available, it will be pulled.", imageName);
-                    DockerClientFactory.instance().checkAndPullImage(dockerClient, imageName);
+                    containerController.checkAndPullImage(imageName);
                 } catch (Exception e) {
                     log.warn("Unable to pre-fetch an image ({}) depended upon by Docker Compose build - startup will continue but may fail. Exception message was: {}", imageName, e.getMessage());
                 }
@@ -310,16 +309,16 @@ public class DockerComposeContainer<SELF extends DockerComposeContainer<SELF>> e
     }
 
     private void registerContainersForShutdown() {
-        ResourceReaper.instance().registerFilterForCleanup(Arrays.asList(
+        containerController.getResourceReaper().registerFilterForCleanup(Arrays.asList(
             new SimpleEntry<>("label", "com.docker.compose.project=" + project)
         ));
     }
 
     @VisibleForTesting
     List<Container> listChildContainers() {
-        return dockerClient.listContainersCmd()
+        return containerController.listContainersIntent()
             .withShowAll(true)
-            .exec().stream()
+            .perform().stream()
             .filter(container -> Arrays.stream(container.getNames()).anyMatch(name ->
                 name.startsWith("/" + project)))
             .collect(toList());
@@ -557,7 +556,7 @@ public class DockerComposeContainer<SELF extends DockerComposeContainer<SELF>> e
     }
 
     private void followLogs(String containerId, Consumer<OutputFrame> consumer) {
-        LogUtils.followOutput(DockerClientFactory.instance().client(), containerId, consumer);
+        LogUtils.followOutput(ContainerControllerFactory.instance().controller(), containerId, consumer);
     }
 
     private SELF self() {
@@ -657,8 +656,8 @@ class ContainerisedDockerCompose extends GenericContainer<ContainerisedDockerCom
 
         AuditLogger.doComposeLog(this.getCommandParts(), this.getEnv());
 
-        final Integer exitCode = this.dockerClient.inspectContainerCmd(getContainerId())
-            .exec()
+        final Integer exitCode = this.containerController.inspectContainerIntent(getContainerId())
+            .perform()
             .getState()
             .getExitCode();
 
