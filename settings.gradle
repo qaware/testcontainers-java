@@ -20,15 +20,25 @@ include "bom"
 include "testcontainers"
 project(':testcontainers').projectDir = "$rootDir/core" as File
 
+/* TODO: reenable modules on by one
 file('modules').eachDir { dir ->
     include dir.name
     project(":${dir.name}").projectDir = dir
 }
+*/
 
-include ':docs:examples:junit4:generic'
-include ':docs:examples:junit4:redis'
-include ':docs:examples:junit5:redis'
-include ':docs:examples:spock:redis'
+// include ':modules:database-commons'
+// include ':modules:jdbc'
+// include ':modules:jdbc-test'
+// include ':modules:r2dbc'
+// include ':modules:mysql'
+// include ':modules:selenium'
+
+// include ':docs:examples:junit4:generic'
+// TODO: reenable examples
+// include ':docs:examples:junit4:redis'
+// include ':docs:examples:junit5:redis'
+// include ':docs:examples:spock:redis'
 
 include 'test-support'
 
