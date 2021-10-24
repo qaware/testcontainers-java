@@ -103,5 +103,7 @@ subprojects {
 
     dependencies {
         testImplementation 'ch.qos.logback:logback-classic:1.2.3'
+        // TODO why is this necessary here?
+        testImplementation 'io.fabric8:kubernetes-client:5.7.0'
     }
 }

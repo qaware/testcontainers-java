@@ -187,6 +187,9 @@ public class DockerClientFactory {
         }
 
         final DockerClient client = new DelegatingDockerClient(createNewDockerClient()) {
+            @Getter
+            final DockerClient dockerClient = strategy.getDockerClient();
+
             @Override
             public void close() {
                 throw new IllegalStateException("You should never close the global DockerClient!");

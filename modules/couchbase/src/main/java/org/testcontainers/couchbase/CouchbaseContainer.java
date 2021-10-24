@@ -234,7 +234,7 @@ public class CouchbaseContainer extends GenericContainer<CouchbaseContainer> {
 
     @Override
     protected void containerIsStarted(InspectContainerResult containerInfo) {
-        createBuckets();
+        timePhase("createBuckets", this::createBuckets);
         logger().info("Couchbase container is ready! UI available at http://{}:{}", getHost(), getMappedPort(MGMT_PORT));
     }
 

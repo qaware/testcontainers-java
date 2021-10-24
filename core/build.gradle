@@ -74,6 +74,8 @@ dependencies {
     api project(":providers-api")
     api project(":providers-docker")
     api project(path: ":providers-kubernetes", configuration: 'shadow')
+    api platform('com.github.docker-java:docker-java-bom:3.2.12')
+    shaded platform('com.github.docker-java:docker-java-bom:3.2.12')
 
     api "com.github.docker-java:docker-java-api"
 
