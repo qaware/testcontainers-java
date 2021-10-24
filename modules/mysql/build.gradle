@@ -9,6 +9,7 @@ dependencies {
     compileOnly project(':r2dbc')
     compileOnly 'dev.miku:r2dbc-mysql:0.8.2.RELEASE'
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation project(':jdbc-test')
     testImplementation 'mysql:mysql-connector-java:8.0.26'
 

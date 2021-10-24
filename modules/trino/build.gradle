@@ -3,6 +3,7 @@ description = "Testcontainers :: JDBC :: Trino"
 dependencies {
     api project(':jdbc')
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation project(':jdbc-test')
     testImplementation 'io.trino:trino-jdbc:352'
     compileOnly 'org.jetbrains:annotations:20.0.0'

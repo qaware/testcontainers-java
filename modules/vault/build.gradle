@@ -3,6 +3,7 @@ description = "Testcontainers :: Vault"
 dependencies {
     api project(':testcontainers')
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation 'com.bettercloud:vault-java-driver:5.1.0'
     testImplementation 'io.rest-assured:rest-assured:4.4.0'
     testImplementation 'org.assertj:assertj-core:3.21.0'

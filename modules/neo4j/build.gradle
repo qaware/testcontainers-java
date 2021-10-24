@@ -33,6 +33,7 @@ dependencies {
 
     api project(":testcontainers")
 
+    testImplementation ('io.fabric8:kubernetes-client:5.7.0')
     testImplementation "org.neo4j.driver:neo4j-java-driver:1.7.5"
     testImplementation 'org.assertj:assertj-core:3.21.0'
 }
